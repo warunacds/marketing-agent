@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Run artifacts and drafts are working state, not source.
+runs/*
+!runs/.gitkeep
+queue/pending/*
+queue/approved/*
+queue/rejected/*
+!queue/pending/.gitkeep
+!queue/approved/.gitkeep
+!queue/rejected/.gitkeep
