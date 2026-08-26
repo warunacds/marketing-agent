@@ -33,6 +33,7 @@ def main() -> None:
 
     p_approve = sub.add_parser("approve", help="approve a pending item")
     p_approve.add_argument("item")
+    p_approve.add_argument("--yes", action="store_true", help="skip the fact-check FAIL confirmation")
 
     p_reject = sub.add_parser("reject", help="reject a pending item")
     p_reject.add_argument("item")
@@ -59,7 +60,7 @@ def main() -> None:
         list_queue()
     elif args.command == "approve":
         from .approve import approve
-        approve(args.item)
+        approve(args.item, yes=args.yes)
     elif args.command == "reject":
         from .approve import reject
         reject(args.item, args.reason)

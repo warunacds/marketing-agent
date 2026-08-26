@@ -37,9 +37,9 @@ def _move(slug: str, dest_name: str, extra: dict) -> None:
     print(f"{slug} -> queue/{dest_name}/")
 
 
-def approve(slug: str) -> None:
+def approve(slug: str, yes: bool = False) -> None:
     m = _manifest(QUEUE_DIR / "pending" / slug) if (QUEUE_DIR / "pending" / slug).is_dir() else {}
-    if m.get("factcheck") == "FAIL":
+    if m.get("factcheck") == "FAIL" and not yes:
         confirm = input("Fact-check FAILED for this item. Approve anyway? [y/N] ")
         if confirm.strip().lower() != "y":
             print("Not approved.")

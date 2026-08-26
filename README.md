@@ -16,8 +16,9 @@ brands/<product>/       the brand brain: positioning, ICP, voice, features,
                         pricing, competitors, never-say, learnings
 agents/*.md             system prompts for each specialist agent
 marketing_agent/        Python package: runner + pipelines + approval CLI
-queue/                  pending / approved / rejected drafts
+queue/                  pending / approved / published / rejected drafts
 runs/<date>/<product>/  step outputs + per-step token/cost log (costs.jsonl)
+dashboard/              Next.js + shadcn/ui web dashboard over the same state
 ```
 
 ## Setup
@@ -98,6 +99,28 @@ to `queue/published/`.
 Notifications: set `SLACK_WEBHOOK_URL` and/or `TELEGRAM_BOT_TOKEN` +
 `TELEGRAM_CHAT_ID` in `.env` and the content pipeline pings you when drafts
 land in the queue (including the fact-check verdict).
+
+## Dashboard
+
+A web UI over the same on-disk state — nothing moves to a database:
+
+```bash
+cd dashboard && npm install && npm run dev   # http://localhost:3000
+```
+
+- **Queue** — pending/approved/published/rejected cards across all products,
+  fact-check badges, buttons to run the content/report pipelines per product
+- **Item view** — rendered markdown tabs (brief, SEO brief, post, social,
+  newsletter, fact-check) with Approve / Reject-with-reason / Publish
+  (all channels or one), mirroring the CLI exactly — every action shells out
+  to `python -m marketing_agent …`, so CLI and UI share one code path
+- **Runs** — live job logs for pipelines started from the UI, per-step
+  token/cost table, per-run totals
+- **Brands** — view and edit every brand-brain file in the browser
+
+The dashboard expects `python3` on PATH (override with `MARKETING_PYTHON`)
+and must run on the same machine as the repo. It is a local tool — don't
+expose it to the internet, it has no auth.
 
 ## Weekly analyst
 
