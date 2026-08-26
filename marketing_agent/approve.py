@@ -49,7 +49,7 @@ def approve(slug: str) -> None:
         "approved_by": getpass.getuser(),
         "approved_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     })
-    print("Approved. Publish from queue/approved/ (distribution wiring is the next build step).")
+    print(f"Approved. Publish with: python -m marketing_agent publish {slug}")
 
 
 def reject(slug: str, reason: str | None = None) -> None:

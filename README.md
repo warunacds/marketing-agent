@@ -57,7 +57,9 @@ the brand brain inlined:
    the keyword space (built-in `web_search` tool); writes a 5-idea
    opportunities brief.
 2. **seo** — picks the best idea, writes a content brief (keywords, intent,
-   outline, meta). Pass `--gsc export.csv` to weight queries you already rank for.
+   outline, meta). Search Console data is pulled automatically if configured in
+   `channels.json` (`pip install google-auth` + a service-account file); or
+   pass an export manually with `--gsc export.csv`.
 3. **writer** — full blog post in the product's voice.
 4. **social + email** (concurrent) — X thread, LinkedIn post, and a newsletter
    section derived from the post, so nothing drifts.
@@ -65,13 +67,37 @@ the brand brain inlined:
    `features.md`/`pricing.md` and `never-say.md`. Verdict: PASS or FAIL.
 6. Drafts land in `queue/pending/<date>-<product>/`.
 
-Then the human gate:
+Then the human gate, and distribution:
 
 ```bash
 python -m marketing_agent queue                       # list pending drafts
 python -m marketing_agent approve 2026-08-26-my-product
 python -m marketing_agent reject  2026-08-26-my-product --reason "off-voice"
+python -m marketing_agent publish 2026-08-26-my-product            # all channels
+python -m marketing_agent publish 2026-08-26-my-product --channel social
 ```
+
+## Distribution
+
+Per-product channel config in `brands/<product>/channels.json` (template
+included). Every channel defaults to `manual` — the asset is printed for you
+to copy — so publishing works before any API is wired up. Adapters:
+
+| Channel     | Adapters | Notes |
+|-------------|----------|-------|
+| blog        | `dir`, `webhook`, `manual` | `dir` writes the post into a content folder you commit/deploy; `webhook` POSTs markdown to any CMS endpoint |
+| social      | `typefully`, `webhook`, `manual` | creates a **draft** thread in Typefully (you hit publish there); LinkedIn is printed for manual posting |
+| newsletter  | `resend`, `webhook`, `manual` | creates a **draft** broadcast in Resend (review and send there) |
+
+Deliberately conservative: external adapters create drafts in those tools, not
+live posts — the approval queue plus one click in the destination tool. Failed
+channels are recorded in the item's manifest and can be retried;
+already-published channels are skipped. When all three succeed the item moves
+to `queue/published/`.
+
+Notifications: set `SLACK_WEBHOOK_URL` and/or `TELEGRAM_BOT_TOKEN` +
+`TELEGRAM_CHAT_ID` in `.env` and the content pipeline pings you when drafts
+land in the queue (including the fact-check verdict).
 
 ## Weekly analyst
 
@@ -99,11 +125,13 @@ Any scheduler works; each run takes the product as a parameter:
 - [x] Brand-brain templates, all seven agent prompts
 - [x] Weekly content pipeline end to end, fact-check gate, approval queue, cost logging
 - [x] Weekly analyst writing lessons back into the brain
-- [ ] Distribution: publish `queue/approved/` items (CMS via git/API, social via
-      Typefully/Buffer, newsletter via Resend/Loops) — deliberately manual until
-      the drafts are consistently worth posting
-- [ ] Search Console API pull instead of manual `--gsc` exports
-- [ ] Approval notifications (Slack/Telegram ping when drafts are queued)
+- [x] Distribution: `publish` command with per-product channel adapters
+      (blog via dir/webhook, social via Typefully drafts, newsletter via Resend
+      drafts, `manual` fallback everywhere)
+- [x] Search Console auto-pull for the SEO agent (optional google-auth)
+- [x] Approval notifications via Slack webhook / Telegram bot
+- [ ] Analytics API pulls for the weekly report (beyond GSC: newsletter and
+      social stats still arrive via `--metrics`)
 
 Point it at one product first. When the drafts are things you'd actually post,
 `cp -r` the brand folder for products two and three — same code, three brains.

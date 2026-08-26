@@ -9,7 +9,10 @@ import datetime as dt
 import json
 import shutil
 
-from ..config import FACTCHECK_MODEL, QUEUE_DIR, RUNS_DIR, load_brand
+from ..channels import load_channels
+from ..config import FACTCHECK_MODEL, QUEUE_DIR, RUNS_DIR, brand_dir, load_brand
+from ..gsc import fetch_gsc_data
+from ..notify import notify
 from ..runner import log_step, run_agent
 
 
@@ -44,7 +47,13 @@ async def run(product: str, gsc_data: str | None = None, model: str | None = Non
     save("01-brief.md", brief.text)
     log_step(run_dir, brief)
 
-    # 2. SEO: pick the best idea, write a content brief.
+    # 2. SEO: pick the best idea, write a content brief. If no export was
+    # passed, try the Search Console API (configured in channels.json).
+    if not gsc_data:
+        gsc_config = load_channels(brand_dir(product)).get("gsc", {})
+        gsc_data = fetch_gsc_data(gsc_config)
+        if gsc_data:
+            print("  pulled Search Console data (last 28 days)")
     gsc_section = (
         f"\n\nSearch Console data:\n{gsc_data}" if gsc_data
         else "\n\nNo Search Console data provided this week."
@@ -113,3 +122,7 @@ async def run(product: str, gsc_data: str | None = None, model: str | None = Non
     print(f"\nDone. Fact-check: {'PASS' if passed else 'FAIL — review 06-factcheck.md before approving'}")
     print(f"Drafts: queue/pending/{slug}/   (total cost ~${total:.2f})")
     print(f"Review, then: python -m marketing_agent approve {slug}")
+    notify(
+        f"[{product}] weekly drafts ready for review — fact-check "
+        f"{'PASS' if passed else 'FAIL'}: queue/pending/{slug}/"
+    )

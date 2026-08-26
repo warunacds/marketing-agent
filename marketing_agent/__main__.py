@@ -5,6 +5,7 @@
   python -m marketing_agent queue
   python -m marketing_agent approve <item>
   python -m marketing_agent reject  <item> [--reason "..."]
+  python -m marketing_agent publish <item> [--channel blog,social,newsletter]
 """
 
 import argparse
@@ -37,6 +38,10 @@ def main() -> None:
     p_reject.add_argument("item")
     p_reject.add_argument("--reason")
 
+    p_publish = sub.add_parser("publish", help="publish an approved item through its channels")
+    p_publish.add_argument("item")
+    p_publish.add_argument("--channel", help="comma-separated subset: blog,social,newsletter")
+
     args = parser.parse_args()
 
     if args.command in ("content", "report") and not os.environ.get("OPENAI_API_KEY"):
@@ -58,6 +63,9 @@ def main() -> None:
     elif args.command == "reject":
         from .approve import reject
         reject(args.item, args.reason)
+    elif args.command == "publish":
+        from .publish import publish
+        publish(args.item, args.channel.split(",") if args.channel else None)
 
 
 if __name__ == "__main__":
