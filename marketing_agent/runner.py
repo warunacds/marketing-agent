@@ -1,9 +1,9 @@
-"""Thin wrapper around the Claude Agent SDK: run one specialist agent, one task.
+"""Thin wrapper around the OpenAI Responses API: one specialist agent, one task.
 
-Each pipeline step is a single `query()` call. The agent's system prompt comes
-from agents/<name>.md; the brand brain is read by the agent itself using the
-SDK's built-in file tools (Read/Glob/Grep), so there is no retrieval layer to
-maintain. Agents are read-only — all files are written by pipeline code, which
+Each pipeline step is a single `responses.create()` call. The agent's system
+prompt comes from agents/<name>.md; the brand brain is inlined into the task
+prompt by the pipeline, so agents need no file access. Research/SEO steps get
+the built-in `web_search` tool. All files are written by pipeline code, which
 keeps the write path (and the approval queue) deterministic.
 """
 
@@ -11,26 +11,50 @@ import json
 import time
 from dataclasses import dataclass
 
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeAgentOptions,
-    ResultMessage,
-    TextBlock,
-    query,
-)
+from openai import AsyncOpenAI
 
-from .config import AGENTS_DIR, DEFAULT_MODEL, ROOT
+from .config import AGENTS_DIR, DEFAULT_MODEL
 
-READ_TOOLS = ["Read", "Glob", "Grep"]
-WEB_TOOLS = ["WebSearch", "WebFetch"]
+# Approximate $/1M-token prices for cost logging (update as OpenAI's price
+# sheet changes; unknown models log tokens with cost null).
+PRICES = {
+    "gpt-5.6-sol": (5.00, 30.00),
+    "gpt-5.6": (5.00, 30.00),      # alias routes to sol
+    "gpt-5.6-terra": (2.00, 12.00),
+    "gpt-5.6-luna": (0.20, 1.20),
+    "gpt-5.5": (5.00, 30.00),
+    "gpt-5.4": (2.50, 15.00),
+    "gpt-5.1": (1.25, 10.00),
+}
+
+_client: AsyncOpenAI | None = None
+
+
+def client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI()  # reads OPENAI_API_KEY
+    return _client
 
 
 @dataclass
 class StepResult:
     agent: str
+    model: str
     text: str
+    input_tokens: int | None
+    output_tokens: int | None
     cost_usd: float | None
     duration_s: float
+
+
+def _estimate_cost(model: str, input_tokens: int | None, output_tokens: int | None) -> float | None:
+    if input_tokens is None or output_tokens is None:
+        return None
+    for known, (in_price, out_price) in PRICES.items():
+        if model == known or model.startswith(known + "-"):
+            return round((input_tokens * in_price + output_tokens * out_price) / 1_000_000, 4)
+    return None
 
 
 async def run_agent(
@@ -39,56 +63,49 @@ async def run_agent(
     *,
     model: str | None = None,
     allow_web: bool = False,
-    max_turns: int = 40,
 ) -> StepResult:
     system_prompt = (AGENTS_DIR / f"{agent_name}.md").read_text()
-    tools = READ_TOOLS + (WEB_TOOLS if allow_web else [])
+    model = model or DEFAULT_MODEL
 
-    options = ClaudeAgentOptions(
-        system_prompt=system_prompt,
-        model=model or DEFAULT_MODEL,
-        cwd=str(ROOT),
-        allowed_tools=tools,
-        # Headless: allowed tools run, anything else is denied instead of
-        # hanging on an interactive permission prompt.
-        permission_mode="dontAsk",
-        max_turns=max_turns,
-    )
+    kwargs = {}
+    if allow_web:
+        kwargs["tools"] = [{"type": "web_search"}]
 
     started = time.monotonic()
-    final_text = ""
-    cost_usd: float | None = None
+    resp = await client().responses.create(
+        model=model,
+        instructions=system_prompt,
+        input=prompt,
+        **kwargs,
+    )
 
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, AssistantMessage):
-            texts = [b.text for b in message.content if isinstance(b, TextBlock)]
-            if texts:
-                # Keep the last assistant text — agents are instructed that
-                # their final message is the deliverable.
-                final_text = "\n".join(texts)
-        elif isinstance(message, ResultMessage):
-            cost_usd = getattr(message, "total_cost_usd", None)
-            result_text = getattr(message, "result", None)
-            if isinstance(result_text, str) and result_text.strip():
-                final_text = result_text
-
-    if not final_text.strip():
+    text = (resp.output_text or "").strip()
+    if not text:
         raise RuntimeError(f"Agent '{agent_name}' produced no output")
+
+    usage = getattr(resp, "usage", None)
+    input_tokens = getattr(usage, "input_tokens", None)
+    output_tokens = getattr(usage, "output_tokens", None)
 
     return StepResult(
         agent=agent_name,
-        text=final_text,
-        cost_usd=cost_usd,
+        model=model,
+        text=text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=_estimate_cost(model, input_tokens, output_tokens),
         duration_s=round(time.monotonic() - started, 1),
     )
 
 
-def log_step(run_dir, result: StepResult, model: str) -> None:
-    """Append cost/duration for one step to the run's cost log."""
+def log_step(run_dir, result: StepResult) -> None:
+    """Append tokens/cost/duration for one step to the run's cost log."""
     with open(run_dir / "costs.jsonl", "a") as f:
         f.write(json.dumps({
             "agent": result.agent,
-            "model": model,
+            "model": result.model,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
             "cost_usd": result.cost_usd,
             "duration_s": result.duration_s,
         }) + "\n")

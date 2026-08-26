@@ -23,10 +23,10 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-# Main pipeline model; override with MARKETING_MODEL.
-DEFAULT_MODEL = os.environ.get("MARKETING_MODEL", "claude-opus-5")
+# Main pipeline model; override with MARKETING_MODEL or --model on the CLI.
+DEFAULT_MODEL = os.environ.get("MARKETING_MODEL", "gpt-5.6-terra")
 # The fact-check gate is a cheap comparison task — a small model is plenty.
-FACTCHECK_MODEL = os.environ.get("MARKETING_FACTCHECK_MODEL", "claude-haiku-4-5")
+FACTCHECK_MODEL = os.environ.get("MARKETING_FACTCHECK_MODEL", "gpt-5.6-luna")
 
 
 def brand_dir(product: str) -> Path:
@@ -43,3 +43,11 @@ def brand_dir(product: str) -> Path:
             f"Create one with: cp -r brands/_template brands/{product}"
         )
     return path
+
+
+def load_brand(product: str) -> str:
+    """Concatenate the brand brain into one block, inlined into every prompt."""
+    parts = []
+    for f in sorted(brand_dir(product).glob("*.md")):
+        parts.append(f"### brands/{product}/{f.name}\n\n{f.read_text().strip()}")
+    return "\n\n".join(parts)

@@ -1,13 +1,13 @@
 # marketing-agent
 
-AI marketing agents for SaaS products, built on the
-[Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python) (Python).
+AI marketing agents for SaaS products, built in Python on the official
+[OpenAI SDK](https://github.com/openai/openai-python) (Responses API).
 
 Not one autonomous "marketer" — a set of narrow specialist agents (research,
-SEO, writer, social, email, fact-check, analyst) that all read a per-product
-**brand brain** folder of markdown files. The same code covers any number of
-products; only `brands/<product>/` differs. **Nothing publishes without a
-human approval recorded in the queue.**
+SEO, writer, social, email, fact-check, analyst) that all work from a
+per-product **brand brain** folder of markdown files, inlined into every
+prompt. The same code covers any number of products; only `brands/<product>/`
+differs. **Nothing publishes without a human approval recorded in the queue.**
 
 ## Layout
 
@@ -17,7 +17,7 @@ brands/<product>/       the brand brain: positioning, ICP, voice, features,
 agents/*.md             system prompts for each specialist agent
 marketing_agent/        Python package: runner + pipelines + approval CLI
 queue/                  pending / approved / rejected drafts
-runs/<date>/<product>/  step outputs + per-step cost log (costs.jsonl)
+runs/<date>/<product>/  step outputs + per-step token/cost log (costs.jsonl)
 ```
 
 ## Setup
@@ -25,7 +25,7 @@ runs/<date>/<product>/  step outputs + per-step cost log (costs.jsonl)
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # add your Anthropic Console API key
+cp .env.example .env        # add your OPENAI_API_KEY
 ```
 
 Create a brand brain for your first product and fill in every file
@@ -35,16 +35,27 @@ Create a brand brain for your first product and fill in every file
 cp -r brands/_template brands/my-product
 ```
 
+## Model selection
+
+Every model is selectable — pass any Responses-API model id:
+
+- Per run: `python -m marketing_agent content --product my-product --model gpt-5.6-sol`
+- Per environment: `MARKETING_MODEL` and `MARKETING_FACTCHECK_MODEL` in `.env`
+- Defaults: `gpt-5.6-terra` for the main steps, `gpt-5.6-luna` for the
+  fact-check gate (a cheap comparison task)
+
 ## Weekly content pipeline
 
 ```bash
 python -m marketing_agent content --product my-product
 ```
 
-Steps, each a single SDK `query()` call with its own system prompt:
+Steps, each a single `responses.create()` call with its own system prompt and
+the brand brain inlined:
 
 1. **research** — scans competitors' changelogs, your ICP's communities, and
-   the keyword space (web search); writes a 5-idea opportunities brief.
+   the keyword space (built-in `web_search` tool); writes a 5-idea
+   opportunities brief.
 2. **seo** — picks the best idea, writes a content brief (keywords, intent,
    outline, meta). Pass `--gsc export.csv` to weight queries you already rank for.
 3. **writer** — full blog post in the product's voice.
@@ -99,9 +110,10 @@ Point it at one product first. When the drafts are things you'd actually post,
 
 ## Cost & model notes
 
-- Main steps run on `claude-opus-5`, the fact-check gate on `claude-haiku-4-5`
-  (override with `MARKETING_MODEL` / `MARKETING_FACTCHECK_MODEL`).
-- Per-step cost and duration are logged to `runs/<date>/<product>/costs.jsonl`;
-  the pipeline prints the run total.
-- Agents are read-only (Read/Glob/Grep + web where needed); all files are
-  written by pipeline code, so the write path is deterministic and auditable.
+- Per-step tokens, estimated cost, and duration are logged to
+  `runs/<date>/<product>/costs.jsonl`; the pipeline prints the run total.
+- Cost estimates come from the price table in `marketing_agent/runner.py` —
+  update it when OpenAI's price sheet changes; unknown models still log tokens.
+- Agents have no file or shell access — research/SEO get web search, everything
+  else is pure text in/out, and all files are written by pipeline code, so the
+  write path is deterministic and auditable.
