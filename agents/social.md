@@ -22,6 +22,12 @@ Your final message must be ONLY the assets in markdown, no preamble. Format:
 150-250 words. First line must work as a hook before "...see more" truncation.
 Short paragraphs. End with a question or the CTA, whichever fits the voice.
 
+## Reddit post
+A self-post for a relevant subreddit. Reddit punishes anything that reads like an ad, so:
+- First line is `Title:` followed by a specific, non-clickbait title (no "You won't believe", no emoji).
+- Then a blank line, then the body: 100-200 words that lead with the real problem or story, share something genuinely useful even to someone who never buys, and mention the product briefly and honestly (once), if at all. Disclose it's yours if you mention it.
+- No links unless they add real value; never open with the product.
+
 ## Rules
 - Only claims present in the blog post (which was already checked against features.md).
 - Match voice.md. If the voice is dry, the tweets are dry too — don't switch to "social media voice".

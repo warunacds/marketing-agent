@@ -78,18 +78,100 @@ def publish_webhook(text: str, meta: dict, config: dict) -> str:
 
 # --- social: Typefully ------------------------------------------------------
 
+def _parse_x_thread(text: str) -> list[str]:
+    """Pull the numbered tweets out of the social asset's '## X thread' section."""
+    thread = _section(text, "X thread")
+    if not thread:
+        raise ChannelError("could not find an '## X thread' section in the social asset")
+    tweets = re.findall(r"^\d+[\.\)]\s*(.+?)(?=^\d+[\.\)]|\Z)", thread, flags=re.M | re.S)
+    return [t.strip() for t in tweets] if tweets else [thread.strip()]
+
+
+def publish_browser_x(text: str, meta: dict, config: dict) -> str:
+    """Post the X thread through a real browser, reusing a hand-saved session.
+
+    config: {"type": "browser_x", "dry_run": bool?, "headed": bool?}. A channel
+    'test' send forces dry_run via meta so it composes without posting.
+    """
+    from . import browser
+    tweets = _parse_x_thread(text)
+    if not browser.has_session("x"):
+        raise ChannelError("no X login saved — run `python -m marketing_agent login x` once, "
+                           "then post again")
+    dry_run = bool(meta.get("dry_run") or config.get("dry_run"))
+    shot = None
+    slug = meta.get("slug")
+    if slug:
+        from .config import RUNS_DIR
+        shot = RUNS_DIR / "jobs" / f"post-x-{slug}.png"
+    try:
+        detail = browser.post_to_x(
+            tweets, dry_run=dry_run, headed=config.get("headed", True), screenshot=shot,
+        )
+    except browser.BrowserPosterError as e:
+        raise ChannelError(str(e)) from None
+    return detail + (f"; screenshot {shot}" if shot and shot.exists() else "")
+
+
+def _parse_reddit_post(text: str) -> tuple[str, str]:
+    """Pull (title, body) from the social asset's '## Reddit post' section."""
+    section = _section(text, "Reddit post")
+    if not section:
+        raise ChannelError("could not find a '## Reddit post' section in the social asset")
+    lines = section.strip().splitlines()
+    title = ""
+    body_start = 0
+    for i, line in enumerate(lines):
+        m = re.match(r"^\s*\**\s*title\s*\**\s*[:\-]\s*(.+)$", line, flags=re.I)
+        if m:
+            title = m.group(1).strip().strip("*").strip()
+            body_start = i + 1
+            break
+    if not title:
+        raise ChannelError("the '## Reddit post' section has no 'Title:' line")
+    body = "\n".join(lines[body_start:]).strip()
+    if not body:
+        raise ChannelError("the '## Reddit post' section has a title but no body")
+    return title, body
+
+
+def publish_browser_reddit(text: str, meta: dict, config: dict) -> str:
+    """Submit the Reddit post through a real browser, reusing a hand-saved session.
+
+    config: {"type": "browser_reddit", "subreddit": str, "dry_run": bool?, "headed": bool?}.
+    """
+    from . import browser
+    subreddit = str(config.get("subreddit", "")).strip()
+    if not subreddit:
+        raise ChannelError("this Reddit channel has no target subreddit set")
+    if not browser.has_session("reddit"):
+        raise ChannelError("no Reddit login saved — run `python -m marketing_agent login reddit` "
+                           "once, then post again")
+    title, body = _parse_reddit_post(text)
+    dry_run = bool(meta.get("dry_run") or config.get("dry_run"))
+    shot = None
+    slug = meta.get("slug")
+    if slug:
+        from .config import RUNS_DIR
+        shot = RUNS_DIR / "jobs" / f"post-reddit-{slug}.png"
+    try:
+        detail = browser.post_to_reddit(
+            subreddit, title, body, dry_run=dry_run,
+            headed=config.get("headed", True), screenshot=shot,
+        )
+    except browser.BrowserPosterError as e:
+        raise ChannelError(str(e)) from None
+    return detail + (f"; screenshot {shot}" if shot and shot.exists() else "")
+
+
 def publish_typefully(text: str, meta: dict, config: dict) -> str:
     """Create a Typefully DRAFT of the X thread (you still hit publish there).
 
     The LinkedIn section has no comparable API and is printed for manual posting.
     """
-    thread = _section(text, "X thread")
-    if not thread:
-        raise ChannelError("could not find an '## X thread' section in the social asset")
-    # Numbered tweets -> Typefully thread format (tweets separated by blank lines
-    # with 4 newlines forcing splits).
-    tweets = re.findall(r"^\d+[\.\)]\s*(.+?)(?=^\d+[\.\)]|\Z)", thread, flags=re.M | re.S)
-    content = "\n\n\n\n".join(t.strip() for t in tweets) if tweets else thread.strip()
+    tweets = _parse_x_thread(text)
+    # Typefully thread format: tweets separated by 4 newlines forcing splits.
+    content = "\n\n\n\n".join(tweets)
     _post(
         "https://api.typefully.com/v1/drafts/",
         headers={"X-API-KEY": _api_key(config, "typefully")},
@@ -144,6 +226,8 @@ ADAPTERS = {
     "dir": publish_dir,
     "webhook": publish_webhook,
     "typefully": publish_typefully,
+    "browser_x": publish_browser_x,
+    "browser_reddit": publish_browser_reddit,
     "resend": publish_resend,
 }
 

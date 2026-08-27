@@ -301,6 +301,8 @@ REQUIRED_CHANNEL_FIELDS = {
     "dir": ("path",),
     "webhook": ("url",),
     "typefully": ("api_key_env",),
+    "browser_x": (),
+    "browser_reddit": ("subreddit",),
     "resend": ("api_key_env", "audience_id", "from"),
 }
 
@@ -364,7 +366,8 @@ TEST_ASSETS = {
     "social": "## X thread\n\n1. TEST: checking the social channel from Marketing assistant. "
               "Safe to delete this draft.\n2. If you can read this in your drafts, the "
               "connection works.\n\n## LinkedIn post\n\nTEST: checking the social channel. "
-              "Safe to delete.\n",
+              "Safe to delete.\n\n## Reddit post\n\nTitle: TEST — Marketing assistant connection check\n\n"
+              "This is a TEST post to check the Reddit channel is wired up. Safe to delete.\n",
     "newsletter": "## Subject lines\n\n- TEST: Marketing assistant connection check\n\n## Body\n\n"
                   "This is a TEST broadcast draft to check the newsletter channel. "
                   "It was not sent to anyone. Safe to delete.\n",
@@ -389,6 +392,7 @@ def test_channel(product: str, body: ChannelTestBody) -> dict:
         "product": product,
         "slug": f"test-{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "channel": body.channel,
+        "dry_run": True,  # a test never posts live (browser adapters compose only)
     }
     buf = io.StringIO()
     try:
@@ -398,6 +402,20 @@ def test_channel(product: str, body: ChannelTestBody) -> dict:
         raise HTTPException(400, str(e)) from None
     printed = buf.getvalue().strip()
     return {"output": detail + (f"\n\n{printed}" if printed else "")}
+
+
+# ---------------------------------------------------------------- browser sessions
+
+@app.get("/api/browser-sessions", dependencies=[Depends(require_api_key)])
+def browser_sessions() -> list[dict]:
+    """Which social platforms have a saved browser login. Logging in is a headed
+    terminal step (`python -m marketing_agent login <platform>`), not an API call."""
+    from .browser import PLATFORMS, has_session
+    return [
+        {"platform": p, "label": meta["label"], "logged_in": has_session(p),
+         "login_command": f"python -m marketing_agent login {p}"}
+        for p, meta in PLATFORMS.items()
+    ]
 
 
 # ---------------------------------------------------------------- secrets

@@ -58,6 +58,9 @@ def main() -> None:
     p_publish.add_argument("item")
     p_publish.add_argument("--channel", help="comma-separated subset: blog,social,newsletter")
 
+    p_login = sub.add_parser("login", help="log into a social platform once (saves the session)")
+    p_login.add_argument("platform", help="platform to log into, e.g. 'x'")
+
     args = parser.parse_args()
 
     if args.command in ("content", "report", "revise", "factcheck", "brandgen") and not os.environ.get("OPENAI_API_KEY"):
@@ -93,6 +96,9 @@ def main() -> None:
     elif args.command == "publish":
         from .publish import publish
         publish(args.item, args.channel.split(",") if args.channel else None)
+    elif args.command == "login":
+        from .browser import save_login
+        save_login(args.platform)
 
 
 if __name__ == "__main__":

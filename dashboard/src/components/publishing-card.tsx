@@ -7,7 +7,7 @@ import { saveChannels, saveSecret, testChannel } from "@/lib/actions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import type { ChannelConfig, Channels } from "@/lib/state"
+import type { BrowserSession, ChannelConfig, Channels } from "@/lib/state"
 
 const TYPE_LABELS: Record<string, string> = {
   manual: "Copy by hand",
@@ -15,6 +15,8 @@ const TYPE_LABELS: Record<string, string> = {
   webhook: "Send to a webhook",
   typefully: "Typefully — drafts your X thread",
   resend: "Resend — drafts your newsletter",
+  browser_x: "Post to X in a browser",
+  browser_reddit: "Post to Reddit in a browser",
 }
 
 const SECRET_FOR: Record<string, { env: string; service: string }> = {
@@ -22,9 +24,29 @@ const SECRET_FOR: Record<string, { env: string; service: string }> = {
   resend: { env: "RESEND_API_KEY", service: "Resend" },
 }
 
+// Browser-driven channels: post through a real browser using a saved login.
+const BROWSER_META: Record<string, { platform: string; description: string; testNote: string }> = {
+  browser_x: {
+    platform: "x",
+    description:
+      "Opens a real browser and posts your X thread using a login you save once — no password stored here.",
+    testNote: "Opens a browser and composes a test thread — never posts.",
+  },
+  browser_reddit: {
+    platform: "reddit",
+    description:
+      "Opens a real browser and submits a post to a subreddit using a login you save once — no password stored here.",
+    testNote: "Opens a browser and fills a test post — never submits.",
+  },
+}
+
 const CHANNEL_DEFS: { id: keyof Channels; label: string; types: string[] }[] = [
   { id: "blog", label: "Blog post", types: ["manual", "dir", "webhook"] },
-  { id: "social", label: "Social posts", types: ["manual", "typefully", "webhook"] },
+  {
+    id: "social",
+    label: "Social posts",
+    types: ["manual", "typefully", "browser_x", "browser_reddit", "webhook"],
+  },
   { id: "newsletter", label: "Newsletter", types: ["manual", "resend", "webhook"] },
 ]
 
@@ -38,6 +60,7 @@ function ChannelEditor({
   types,
   initial,
   secretsSet,
+  browserSessions,
 }: {
   product: string
   id: string
@@ -45,10 +68,19 @@ function ChannelEditor({
   types: string[]
   initial: ChannelConfig
   secretsSet: Record<string, boolean>
+  browserSessions: BrowserSession[]
 }) {
   const router = useRouter()
   const [type, setType] = useState(initial.type ?? "manual")
   const [path, setPath] = useState(String(initial.path ?? ""))
+  // Safe default: a freshly-picked browser channel composes but doesn't post.
+  // Only an already-saved browser channel keeps its stored dry_run value.
+  const [dryRun, setDryRun] = useState(
+    initial.type === "browser_x" || initial.type === "browser_reddit"
+      ? Boolean(initial.dry_run)
+      : true
+  )
+  const [subreddit, setSubreddit] = useState(String(initial.subreddit ?? ""))
   const [url, setUrl] = useState(String(initial.url ?? ""))
   const [headers, setHeaders] = useState(
     initial.headers && typeof initial.headers === "object" ? JSON.stringify(initial.headers) : ""
@@ -90,6 +122,10 @@ function ChannelEditor({
       toast.error("Resend needs an Audience ID and a From address")
       return false
     }
+    if (type === "browser_reddit" && !subreddit.trim()) {
+      toast.error("Pick a subreddit", { description: "Reddit posts need one community to go to." })
+      return false
+    }
     if (secret) {
       if (secretValue.trim()) {
         const keyResult = await saveSecret(secret.env, secretValue.trim())
@@ -116,6 +152,11 @@ function ChannelEditor({
     if (type === "resend") {
       config.audience_id = audienceId.trim()
       config.from = from.trim()
+    }
+    if (type === "browser_x") config.dry_run = dryRun
+    if (type === "browser_reddit") {
+      config.subreddit = subreddit.trim()
+      config.dry_run = dryRun
     }
 
     const result = await saveChannels(product, { [id]: config })
@@ -243,6 +284,80 @@ function ChannelEditor({
         </>
       )}
 
+      {BROWSER_META[type] && (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">{BROWSER_META[type].description}</p>
+
+          {type === "browser_reddit" && (
+            <div className="space-y-1.5">
+              <label htmlFor={`ch-${product}-${id}-subreddit`} className="block text-sm font-medium">
+                Subreddit
+              </label>
+              <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-sm focus-within:ring-2 focus-within:ring-ring/50">
+                <span className="text-muted-foreground">r/</span>
+                <input
+                  id={`ch-${product}-${id}-subreddit`}
+                  value={subreddit}
+                  onChange={(e) => setSubreddit(e.target.value.replace(/^\/*(r\/)?/i, ""))}
+                  placeholder="webdev"
+                  className="w-full bg-transparent outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The one community to post to. Posting the same thing to many subreddits is the
+                fastest way to get banned — pick one that fits.
+              </p>
+            </div>
+          )}
+
+          {(() => {
+            const session = browserSessions.find((s) => s.platform === BROWSER_META[type].platform)
+            if (!session) return null
+            return session.logged_in ? (
+              <p className="text-sm">
+                <span className="text-success">✓ Logged into {session.label}</span>{" "}
+                <span className="text-xs text-muted-foreground">
+                  (to re-login, run <code>{session.login_command}</code> again)
+                </span>
+              </p>
+            ) : (
+              <div className="space-y-1.5 rounded-md border px-3 py-2">
+                <p className="text-sm">
+                  One-time setup: run this in your terminal, then log in when the browser opens:
+                </p>
+                <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">
+                  <code>{session.login_command}</code>
+                </pre>
+                <p className="text-xs text-muted-foreground">
+                  You only need to do this once — the login is remembered until the session
+                  expires.
+                </p>
+              </div>
+            )
+          })()}
+
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+            />
+            Dry run (compose but don&apos;t post)
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Leave this on until you&apos;ve watched it work. Turn off to post for real.
+          </p>
+
+          {type === "browser_reddit" && (
+            <p className="text-xs text-muted-foreground">
+              Reddit removes anything that reads like an ad. The AI writes a community-first post,
+              but read it before you turn off dry run.
+            </p>
+          )}
+        </div>
+      )}
+
       {secret &&
         (keyOnServer && !replacingKey ? (
           <p className="flex items-center gap-2 text-sm">
@@ -283,6 +398,9 @@ function ChannelEditor({
             Testing creates a draft labeled TEST in {secret.service} — nothing is sent.
           </span>
         )}
+        {BROWSER_META[type] && (
+          <span className="text-xs text-muted-foreground">{BROWSER_META[type].testNote}</span>
+        )}
       </div>
 
       {testOutput && (
@@ -303,10 +421,12 @@ export function PublishingCard({
   product,
   channels,
   secrets,
+  browserSessions,
 }: {
   product: string
   channels: Channels
   secrets: Record<string, boolean>
+  browserSessions: BrowserSession[]
 }) {
   return (
     <Card>
@@ -327,6 +447,7 @@ export function PublishingCard({
               types={def.types}
               initial={channels[def.id] ?? { type: "manual" }}
               secretsSet={secrets}
+              browserSessions={browserSessions}
             />
           </div>
         ))}

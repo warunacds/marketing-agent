@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { brandFileLabel } from "@/lib/format"
 import {
   getBrands,
+  getBrowserSessions,
   getChannels,
   getSchedules,
   getSecrets,
@@ -19,10 +20,11 @@ import {
 export const dynamic = "force-dynamic"
 
 export default async function ProductInfoPage() {
-  const [brands, schedules, secrets] = await Promise.all([
+  const [brands, schedules, secrets, browserSessions] = await Promise.all([
     getBrands(),
     getSchedules(),
     getSecrets(["TYPEFULLY_API_KEY", "RESEND_API_KEY"]),
+    getBrowserSessions(),
   ])
   const [channelsList, todosList] = await Promise.all([
     Promise.all(brands.map((b) => getChannels(b.product))),
@@ -77,7 +79,12 @@ export default async function ProductInfoPage() {
                 </CardContent>
               </Card>
               <OpenQuestionsCard product={brand.product} todos={todosList[i]} />
-              <PublishingCard product={brand.product} channels={channelsList[i]} secrets={secrets} />
+              <PublishingCard
+                product={brand.product}
+                channels={channelsList[i]}
+                secrets={secrets}
+                browserSessions={browserSessions}
+              />
               <ScheduleCard schedule={schedule} />
             </Fragment>
           )

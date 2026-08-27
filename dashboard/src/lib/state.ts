@@ -181,6 +181,17 @@ export async function getRunFile(date: string, product: string, file: string): P
   return content
 }
 
+export interface BrowserSession {
+  platform: string
+  label: string
+  logged_in: boolean
+  login_command: string
+}
+
+export async function getBrowserSessions(): Promise<BrowserSession[]> {
+  return api<BrowserSession[]>("/api/browser-sessions")
+}
+
 export interface Todo {
   file: string
   line: number
