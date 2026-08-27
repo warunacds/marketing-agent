@@ -39,6 +39,14 @@ def main() -> None:
     p_factcheck.add_argument("item")
     p_factcheck.add_argument("--model", help="OpenAI model id (default: MARKETING_FACTCHECK_MODEL)")
 
+    p_channel = sub.add_parser("channel-content", help="generate ONE channel's content as its own item")
+    p_channel.add_argument("--product", required=True)
+    p_channel.add_argument("--target", required=True, help="blog | x | linkedin | reddit | newsletter")
+    p_channel.add_argument("--instructions", help="standing guidance for this channel")
+    p_channel.add_argument("--auto-publish", action="store_true",
+                           help="approve + publish automatically if the fact-check passes")
+    p_channel.add_argument("--model", help="OpenAI model id")
+
     p_brandgen = sub.add_parser("brandgen", help="draft a brand brain from a product description")
     p_brandgen.add_argument("product", help="existing brand folder (copied from _template)")
     p_brandgen.add_argument("--description", required=True, help="plain-language product description")
@@ -63,7 +71,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command in ("content", "report", "revise", "factcheck", "brandgen") and not os.environ.get("OPENAI_API_KEY"):
+    if args.command in ("content", "report", "revise", "factcheck", "brandgen", "channel-content") and not os.environ.get("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is not set. Copy .env.example to .env and add your key.")
 
     if args.command == "content":
@@ -81,6 +89,12 @@ def main() -> None:
     elif args.command == "factcheck":
         from .pipelines import revise
         asyncio.run(revise.recheck(args.item, model=args.model))
+    elif args.command == "channel-content":
+        from .pipelines import channel_content
+        asyncio.run(channel_content.generate(
+            args.product, args.target, instructions=args.instructions,
+            auto_publish=args.auto_publish, model=args.model,
+        ))
     elif args.command == "brandgen":
         from .pipelines import brand_builder
         asyncio.run(brand_builder.run(args.product, args.description, model=args.model))

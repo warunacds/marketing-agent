@@ -1,6 +1,7 @@
 {
-  "enabled": false,
-  "day": "monday",
-  "hour": 9,
-  "instructions": ""
+  "entries": [],
+  "report_enabled": false,
+  "report_day": "friday",
+  "report_hour": 17,
+  "report_last_run": null
 }

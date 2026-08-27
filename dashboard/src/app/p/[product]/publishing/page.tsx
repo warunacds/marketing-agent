@@ -30,10 +30,7 @@ export default async function PublishingPage({
 
   const schedule: Schedule = schedules.find((s) => s.product === product) ?? {
     product,
-    enabled: false,
-    day: "monday",
-    hour: 9,
-    instructions: "",
+    entries: [],
     report_enabled: false,
     report_day: "friday",
     report_hour: 17,
@@ -68,8 +65,7 @@ export default async function PublishingPage({
         <div className="space-y-1">
           <h2 className="font-display text-base font-semibold text-ink">Schedule</h2>
           <p className="text-sm text-muted-foreground">
-            Let the AI draft on a weekly rhythm, or leave this off and create content whenever you
-            want. Drafts always wait for your approval.
+            Set a cadence per channel, or leave it off and create content whenever you want.
           </p>
         </div>
         <ScheduleCard schedule={schedule} />

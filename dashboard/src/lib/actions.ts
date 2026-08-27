@@ -91,13 +91,22 @@ export async function factcheckItem(slug: string): Promise<ActionResult> {
   }
 }
 
+export interface ScheduleEntryPayload {
+  target: string
+  enabled: boolean
+  cadence: string
+  every_n_days: number
+  day: string
+  hour: number
+  auto_publish: boolean
+  instructions: string
+}
+
 export async function saveSchedule(
   product: string,
   schedule: {
-    enabled: boolean
-    day: string
-    hour: number
-    instructions: string
+    // One entry per channel (all five), so toggling one off keeps its config.
+    entries: ScheduleEntryPayload[]
     // Always sent together: the API defaults omitted report fields, so a
     // partial body would silently reset them.
     report_enabled: boolean
@@ -112,6 +121,24 @@ export async function saveSchedule(
     )
     revalidatePath("/", "layout")
     return { ok: true, output }
+  } catch (e) {
+    return failure(e)
+  }
+}
+
+/** "Make one channel now" — always queues for review (auto-publish is schedule-only). */
+export async function generateChannel(
+  product: string,
+  target: string,
+  instructions?: string
+): Promise<ActionResult> {
+  try {
+    const { job_id } = await api<{ job_id: string }>(
+      `/api/products/${encodeURIComponent(product)}/generate`,
+      { method: "POST", body: JSON.stringify({ target, instructions: instructions || undefined }) }
+    )
+    revalidatePath("/", "layout")
+    return { ok: true, output: `Started (job ${job_id})`, jobId: job_id }
   } catch (e) {
     return failure(e)
   }

@@ -649,6 +649,25 @@ def create_product(body: ProductBody) -> dict:
     return out
 
 
+class GenerateBody(BaseModel):
+    target: str  # blog | x | linkedin | reddit | newsletter
+    instructions: str | None = None
+
+
+@app.post("/api/products/{product}/generate", dependencies=[Depends(require_api_key)])
+def generate_channel(product: str, body: GenerateBody) -> dict:
+    """Make one channel's content now, on demand. Always queues for review
+    (auto-publish only happens on a schedule)."""
+    from .pipelines.channel_content import TARGETS
+    _brand_dir_or_404(product)
+    if body.target not in TARGETS:
+        raise HTTPException(400, f"unknown target '{body.target}'. Options: {', '.join(TARGETS)}")
+    args = ["channel-content", "--product", product, "--target", body.target]
+    if body.instructions and body.instructions.strip():
+        args += ["--instructions", body.instructions.strip()]
+    return {"job_id": _spawn_job(args, f"channel-{body.target}", product)}
+
+
 # ---------------------------------------------------------------- runs / jobs
 
 class PipelineBody(BaseModel):
@@ -767,23 +786,47 @@ def _schedule_path(product: str):
     return BRANDS_DIR / product / "schedule.json"
 
 
-SCHEDULE_DEFAULTS = {
-    "enabled": False, "day": "monday", "hour": 9, "instructions": "",
-    "report_enabled": False, "report_day": "friday", "report_hour": 17,
-}
+SCHEDULE_TARGETS = ("blog", "x", "linkedin", "reddit", "newsletter")
+CADENCES = ("daily", "every_n_days", "weekly")
+REPORT_DEFAULTS = {"report_enabled": False, "report_day": "friday", "report_hour": 17}
 
 
 def _read_schedule(product: str) -> dict:
+    """Normalize stored schedule to the entries model. Migrates the old flat
+    {enabled,day,hour,instructions} content schedule to a single weekly blog entry."""
     path = _schedule_path(product)
     stored = json.loads(path.read_text()) if path.exists() else {}
-    return {**SCHEDULE_DEFAULTS, **stored}
+    entries = stored.get("entries")
+    if entries is None:
+        entries = []
+        if stored.get("enabled"):  # legacy flat content schedule
+            entries.append({
+                "target": "blog", "enabled": True, "cadence": "weekly",
+                "day": stored.get("day", "monday"), "hour": stored.get("hour", 9),
+                "auto_publish": False, "instructions": stored.get("instructions", ""),
+                "last_run": stored.get("last_run"),
+            })
+    return {
+        "entries": entries,
+        **REPORT_DEFAULTS,
+        **{k: stored[k] for k in ("report_enabled", "report_day", "report_hour", "report_last_run") if k in stored},
+    }
+
+
+class ScheduleEntry(BaseModel):
+    target: str
+    enabled: bool = True
+    cadence: str = "weekly"          # daily | every_n_days | weekly
+    every_n_days: int = 3            # used when cadence == every_n_days
+    day: str = "monday"             # used when cadence == weekly
+    hour: int = 9                    # 0-23, server-local
+    auto_publish: bool = False       # skip manual approval (only on fact-check PASS)
+    instructions: str = ""
+    last_run: str | None = None
 
 
 class ScheduleBody(BaseModel):
-    enabled: bool
-    day: str  # weekday name, lowercase
-    hour: int  # 0-23, server-local time
-    instructions: str = ""  # standing guidance passed to every scheduled run
+    entries: list[ScheduleEntry] = []
     report_enabled: bool = False
     report_day: str = "friday"
     report_hour: int = 17
@@ -803,28 +846,70 @@ def save_schedule(product: str, body: ScheduleBody) -> dict:
     _check_slug(product, "product")
     if not (BRANDS_DIR / product).is_dir() or product.startswith("_"):
         raise HTTPException(404, f"no such product: {product}")
-    for day in (body.day, body.report_day):
-        if day.lower() not in WEEKDAYS:
+    if body.report_day.lower() not in WEEKDAYS:
+        raise HTTPException(400, f"report day must be one of: {', '.join(WEEKDAYS)}")
+    if not 0 <= body.report_hour <= 23:
+        raise HTTPException(400, "report hour must be 0-23")
+    seen = set()
+    prior = {e.get("target"): e for e in _read_schedule(product)["entries"]}
+    entries_out = []
+    for e in body.entries:
+        if e.target not in SCHEDULE_TARGETS:
+            raise HTTPException(400, f"unknown target '{e.target}'. Options: {', '.join(SCHEDULE_TARGETS)}")
+        if e.target in seen:
+            raise HTTPException(400, f"duplicate schedule for '{e.target}'")
+        seen.add(e.target)
+        if e.cadence not in CADENCES:
+            raise HTTPException(400, f"cadence must be one of: {', '.join(CADENCES)}")
+        if e.cadence == "weekly" and e.day.lower() not in WEEKDAYS:
             raise HTTPException(400, f"day must be one of: {', '.join(WEEKDAYS)}")
-    for hour in (body.hour, body.report_hour):
-        if not 0 <= hour <= 23:
+        if e.cadence == "every_n_days" and not 1 <= e.every_n_days <= 60:
+            raise HTTPException(400, "every_n_days must be 1-60")
+        if not 0 <= e.hour <= 23:
             raise HTTPException(400, "hour must be 0-23")
-    current = _read_schedule(product)
-    current.update({
-        "enabled": body.enabled,
-        "day": body.day.lower(),
-        "hour": body.hour,
-        "instructions": body.instructions.strip(),
+        entry = e.model_dump()
+        entry["day"] = entry["day"].lower()
+        entry["instructions"] = entry["instructions"].strip()
+        # preserve last_run across edits unless the client sent one
+        if entry.get("last_run") is None and e.target in prior:
+            entry["last_run"] = prior[e.target].get("last_run")
+        entries_out.append(entry)
+
+    out = {
+        "entries": entries_out,
         "report_enabled": body.report_enabled,
         "report_day": body.report_day.lower(),
         "report_hour": body.report_hour,
-    })
-    _schedule_path(product).write_text(json.dumps(current, indent=2) + "\n")
+        "report_last_run": _read_schedule(product).get("report_last_run"),
+    }
+    _schedule_path(product).write_text(json.dumps(out, indent=2) + "\n")
     return {"output": f"schedule saved for {product}"}
 
 
+def _entry_due(entry: dict, now: "dt.datetime") -> bool:
+    if not entry.get("enabled") or now.hour != int(entry.get("hour", -1)):
+        return False
+    last = entry.get("last_run")
+    if last == now.date().isoformat():
+        return False  # already ran today
+    cadence = entry.get("cadence", "weekly")
+    if cadence == "daily":
+        return True
+    if cadence == "weekly":
+        return WEEKDAYS[now.weekday()] == entry.get("day")
+    if cadence == "every_n_days":
+        if not last:
+            return True
+        try:
+            gap = (now.date() - dt.date.fromisoformat(last)).days
+        except ValueError:
+            return True
+        return gap >= int(entry.get("every_n_days", 1))
+    return False
+
+
 def _scheduler_tick(now: "dt.datetime | None" = None) -> list[str]:
-    """Start content runs that are due. Returns started job ids (for tests)."""
+    """Start per-channel content runs (and reports) that are due."""
     now = now or dt.datetime.now()
     started = []
     if not BRANDS_DIR.is_dir():
@@ -833,23 +918,27 @@ def _scheduler_tick(now: "dt.datetime | None" = None) -> list[str]:
         if not p.is_dir() or p.name.startswith("_"):
             continue
         sched = _read_schedule(p.name)
-        for kind, enabled_key, day_key, hour_key, last_key in (
-            ("content", "enabled", "day", "hour", "last_run"),
-            ("report", "report_enabled", "report_day", "report_hour", "report_last_run"),
-        ):
-            if not sched.get(enabled_key):
+        dirty = False
+        for entry in sched["entries"]:
+            if not _entry_due(entry, now):
                 continue
-            if WEEKDAYS[now.weekday()] != sched.get(day_key) or now.hour != int(sched.get(hour_key, -1)):
-                continue
-            if sched.get(last_key) == now.date().isoformat():
-                continue  # already ran today
-            # Mark BEFORE spawning so a slow/crashing spawn can't double-run.
-            sched[last_key] = now.date().isoformat()
+            entry["last_run"] = now.date().isoformat()  # mark before spawning
+            dirty = True
+            args = ["channel-content", "--product", p.name, "--target", entry["target"]]
+            if entry.get("instructions"):
+                args += ["--instructions", entry["instructions"]]
+            if entry.get("auto_publish"):
+                args += ["--auto-publish"]
+            started.append(_spawn_job(args, f"scheduled-{entry['target']}", p.name))
+        # weekly report (unchanged cadence)
+        if sched.get("report_enabled") and now.hour == int(sched.get("report_hour", -1)) \
+                and WEEKDAYS[now.weekday()] == sched.get("report_day") \
+                and sched.get("report_last_run") != now.date().isoformat():
+            sched["report_last_run"] = now.date().isoformat()
+            dirty = True
+            started.append(_spawn_job(["report", "--product", p.name], "report", p.name))
+        if dirty:
             _schedule_path(p.name).write_text(json.dumps(sched, indent=2) + "\n")
-            args = [kind, "--product", p.name]
-            if kind == "content" and sched.get("instructions"):
-                args += ["--instructions", sched["instructions"]]
-            started.append(_spawn_job(args, "scheduled" if kind == "content" else "report", p.name))
     return started
 
 

@@ -18,6 +18,23 @@ CHANNEL_FILES = {
     "newsletter": "05-newsletter.md",
 }
 
+# A per-channel (scheduled) item carries a `target`; it publishes only that channel,
+# and for a social platform only the destinations of matching type.
+TARGET_CHANNEL = {"blog": "blog", "x": "social", "linkedin": "social",
+                  "reddit": "social", "newsletter": "newsletter"}
+PLATFORM_TYPES = {
+    "x": {"browser_x", "typefully", "manual"},
+    "linkedin": {"browser_linkedin", "manual"},
+    "reddit": {"browser_reddit", "manual"},
+}
+
+
+def _destinations_for(channel: str, target: str | None, configs: list[dict]) -> list[dict]:
+    """Filter a channel's destinations down to those a targeted item should hit."""
+    if target in PLATFORM_TYPES and channel == "social":
+        return [d for d in configs if d.get("type", "manual") in PLATFORM_TYPES[target]]
+    return configs
+
 
 def as_destinations(value) -> list[dict]:
     """Normalize a channel config (missing / single object / list) to a list."""
@@ -60,13 +77,24 @@ def publish(slug: str, only_channels: list[str] | None = None) -> None:
     channels = load_channels(brand_dir(product))
     published = manifest.setdefault("published", {})
 
-    targets = only_channels or list(CHANNEL_FILES)
+    # A targeted (per-channel) item publishes only its own channel by default.
+    target = manifest.get("target")
+    if only_channels:
+        targets = only_channels
+    elif target in TARGET_CHANNEL:
+        targets = [TARGET_CHANNEL[target]]
+    else:
+        targets = list(CHANNEL_FILES)
+
     for channel in targets:
         if channel not in CHANNEL_FILES:
             raise SystemExit(f"Unknown channel '{channel}'. Options: {', '.join(CHANNEL_FILES)}")
 
-        destinations = as_destinations(channels.get(channel))
-        text = (item_dir / CHANNEL_FILES[channel]).read_text()
+        asset_path = item_dir / CHANNEL_FILES[channel]
+        if not asset_path.exists():
+            continue  # a per-channel item only carries its own asset
+        destinations = _destinations_for(channel, target, as_destinations(channels.get(channel)))
+        text = asset_path.read_text()
         receipts = _prior_receipts(published.get(channel), len(destinations))
 
         for i, config in enumerate(destinations):
@@ -102,7 +130,9 @@ def publish(slug: str, only_channels: list[str] | None = None) -> None:
     (item_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     def channel_done(channel: str) -> bool:
-        expected = len(as_destinations(channels.get(channel)))
+        if not (item_dir / CHANNEL_FILES[channel]).exists():
+            return True  # not part of this item
+        expected = len(_destinations_for(channel, target, as_destinations(channels.get(channel))))
         receipts = published.get(channel)
         if not isinstance(receipts, list) or len(receipts) < expected:
             return False

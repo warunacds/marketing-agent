@@ -117,13 +117,24 @@ export async function getJob(id: string): Promise<JobDetail | null> {
   }
 }
 
-export interface Schedule {
-  product: string
+export type ScheduleTarget = "blog" | "x" | "linkedin" | "reddit" | "newsletter"
+export type Cadence = "daily" | "every_n_days" | "weekly"
+
+export interface ScheduleEntry {
+  target: ScheduleTarget
   enabled: boolean
+  cadence: Cadence
+  every_n_days: number
   day: string
   hour: number
+  auto_publish: boolean
   instructions: string
-  last_run?: string
+  last_run?: string | null
+}
+
+export interface Schedule {
+  product: string
+  entries: ScheduleEntry[]
   report_enabled: boolean
   report_day: string
   report_hour: number

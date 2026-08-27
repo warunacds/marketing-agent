@@ -17,12 +17,33 @@ import {
   type BrowserSession,
   type Channels,
   type QueueItem,
+  type ScheduleEntry,
 } from "@/lib/state"
 
 export const dynamic = "force-dynamic"
 
 const DAY_CAP = (d: string) => d.charAt(0).toUpperCase() + d.slice(1)
 const AT = (hour: number) => `${hour}:00`
+
+const ENTRY_LABEL: Record<string, string> = {
+  blog: "Blog",
+  x: "X",
+  linkedin: "LinkedIn",
+  reddit: "Reddit",
+  newsletter: "Newsletter",
+}
+
+/** "X every day at 8:00 · auto-published" from an enabled schedule entry. */
+function describeEntry(e: ScheduleEntry): string {
+  const label = ENTRY_LABEL[e.target] ?? e.target
+  const cadence =
+    e.cadence === "daily"
+      ? "every day"
+      : e.cadence === "every_n_days"
+        ? `every ${e.every_n_days} day${e.every_n_days === 1 ? "" : "s"}`
+        : `every ${DAY_CAP(e.day)}`
+  return `${label} ${cadence} at ${AT(e.hour)}${e.auto_publish ? " · auto-published" : ""}`
+}
 
 // Which social destination types post through a saved browser login.
 const BROWSER_PLATFORM: Record<string, string> = {
@@ -88,6 +109,7 @@ export default async function HomePage({ params }: { params: Promise<{ product: 
   const pending = queue.filter((i) => i.state === "pending").sort(newestFirst)
   const published = queue.filter((i) => i.state === "published").sort(newestFirst)
   const schedule = schedules.find((s) => s.product === product)
+  const enabledEntries = (schedule?.entries ?? []).filter((e) => e.enabled)
   const { allManual, needLogin } = analyzePublishing(channels, sessions)
 
   const reviewBase = `/p/${product}/review`
@@ -196,10 +218,12 @@ export default async function HomePage({ params }: { params: Promise<{ product: 
           <CardTitle className="text-base">Coming up</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          {schedule?.enabled ? (
-            <p className="text-ink">
-              New content drafts every {DAY_CAP(schedule.day)} at {AT(schedule.hour)}.
-            </p>
+          {enabledEntries.length > 0 ? (
+            enabledEntries.map((e) => (
+              <p key={e.target} className="text-ink">
+                {describeEntry(e)}
+              </p>
+            ))
           ) : (
             <p className="text-muted-foreground">
               No automatic schedule yet.{" "}

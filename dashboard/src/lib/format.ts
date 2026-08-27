@@ -61,8 +61,27 @@ const JOB_TITLES: Record<string, (product: string) => string> = {
   brandgen: (p) => `Drafting product info for ${p}`,
 }
 
+const CHANNEL_JOB_LABELS: Record<string, string> = {
+  blog: "Blog",
+  x: "X",
+  linkedin: "LinkedIn",
+  reddit: "Reddit",
+  newsletter: "Newsletter",
+}
+
 /** "Creating content for domainpilot" + a human timestamp, from a job id. */
 export function describeJob(id: string): { title: string; when: string } {
+  // Per-channel generate jobs use the kind "channel-<target>".
+  const cm = id.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-.*?-channel-(blog|x|linkedin|reddit|newsletter)-(.+)$/
+  )
+  if (cm) {
+    const [, date, hh, mm, target, product] = cm
+    return {
+      title: `Creating a ${CHANNEL_JOB_LABELS[target]} post for ${product}`,
+      when: `${formatDate(date)}, ${hh}:${mm} UTC`,
+    }
+  }
   const m = id.match(
     /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-.*?-(content|report|revise|factcheck|scheduled|brandgen)-(.+)$/
   )
