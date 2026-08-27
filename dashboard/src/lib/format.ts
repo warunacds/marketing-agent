@@ -26,6 +26,23 @@ export function contentSummary(files?: string[]): string | null {
   return joined.charAt(0).toUpperCase() + joined.slice(1)
 }
 
+export interface PublishReceipt {
+  type?: string
+  label?: string
+  status: string
+  detail?: string
+  at?: string
+  adapter?: string
+}
+
+/** Publish receipts are now an array per channel; old items may hold a lone object. */
+export function asReceipts(
+  value: PublishReceipt | PublishReceipt[] | undefined
+): PublishReceipt[] {
+  if (!value) return []
+  return Array.isArray(value) ? value : [value]
+}
+
 export function channelLabel(channel: string): string {
   const labels: Record<string, string> = {
     blog: "blog",

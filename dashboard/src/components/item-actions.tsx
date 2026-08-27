@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { approveItem, publishItem, rejectItem, reviseItem, type ActionResult } from "@/lib/actions"
+import { asReceipts, type PublishReceipt } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -32,7 +33,7 @@ export function ItemActions({
   slug: string
   state: string
   revising?: boolean
-  published?: Record<string, { status: string }>
+  published?: Record<string, PublishReceipt | PublishReceipt[]>
   files?: string[]
 }) {
   const router = useRouter()
@@ -46,7 +47,12 @@ export function ItemActions({
   const [reviseModel, setReviseModel] = useState("")
 
   const channels = CHANNELS.filter((c) => !files || files.includes(c.file))
-  const isPublished = (id: string) => published?.[id]?.status === "ok"
+  // A channel counts as published only when every one of its destinations
+  // succeeded — a partial/errored channel stays selectable to retry.
+  const isPublished = (id: string) => {
+    const receipts = asReceipts(published?.[id])
+    return receipts.length > 0 && receipts.every((r) => r.status === "ok")
+  }
   const [publishOpen, setPublishOpen] = useState(false)
   const [selected, setSelected] = useState<string[]>(() =>
     channels.filter((c) => !isPublished(c.id)).map((c) => c.id)

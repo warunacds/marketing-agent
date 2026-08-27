@@ -2,6 +2,7 @@
 // backend (marketing_agent/api.py). All calls are uncached so the queue is
 // always fresh.
 import { api, ApiError } from "./api"
+import type { PublishReceipt } from "./format"
 
 export type QueueState = "pending" | "approved" | "published" | "rejected"
 
@@ -17,7 +18,9 @@ export interface Manifest {
   rejected_at?: string
   revising?: boolean
   revisions?: { at: string; feedback: string }[]
-  published?: Record<string, { status: string; adapter?: string; at?: string; detail?: string }>
+  // One channel key → an array of destination receipts (legacy items may hold
+  // a single object; render with asReceipts()).
+  published?: Record<string, PublishReceipt | PublishReceipt[]>
 }
 
 export interface QueueItem {
@@ -133,7 +136,8 @@ export interface ChannelConfig {
   [key: string]: unknown
 }
 
-export type Channels = Record<"blog" | "social" | "newsletter", ChannelConfig>
+/** Each channel is now a list of destinations (unconfigured → [{type:"manual"}]). */
+export type Channels = Record<"blog" | "social" | "newsletter", ChannelConfig[]>
 
 export async function getChannels(product: string): Promise<Channels> {
   return api<Channels>(`/api/channels/${encodeURIComponent(product)}`)

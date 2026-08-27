@@ -326,33 +326,40 @@ def _load_channels_file(product: str) -> dict:
 
 @app.get("/api/channels/{product}", dependencies=[Depends(require_api_key)])
 def get_channels(product: str) -> dict:
+    """Each channel is returned as a LIST of destinations (one or more)."""
+    from .publish import as_destinations
     _brand_dir_or_404(product)
     raw = _load_channels_file(product)
-    return {
-        name: raw.get(name, {"type": "manual"})
-        for name in CHANNEL_NAMES
-    }
+    return {name: as_destinations(raw.get(name)) for name in CHANNEL_NAMES}
 
 
 class ChannelsBody(BaseModel):
-    channels: dict  # {blog: {type, ...}, social: {...}, newsletter: {...}}
+    channels: dict  # {name: config-object OR list-of-config-objects}
+
+
+def _validate_destination(name: str, config) -> None:
+    from .channels import ADAPTERS
+    if not isinstance(config, dict):
+        raise HTTPException(400, f"{name}: each destination must be an object")
+    ctype = config.get("type", "manual")
+    if ctype not in ADAPTERS:
+        raise HTTPException(400, f"{name}: unknown type '{ctype}'. Options: {', '.join(ADAPTERS)}")
+    for field in REQUIRED_CHANNEL_FIELDS[ctype]:
+        if not str(config.get(field, "")).strip():
+            raise HTTPException(400, f"{name}: '{ctype}' needs '{field}'")
 
 
 @app.put("/api/channels/{product}", dependencies=[Depends(require_api_key)])
 def save_channels(product: str, body: ChannelsBody) -> dict:
-    from .channels import ADAPTERS
     _brand_dir_or_404(product)
-    for name, config in body.channels.items():
+    for name, value in body.channels.items():
         if name not in CHANNEL_NAMES:
             raise HTTPException(400, f"unknown channel: {name}")
-        if not isinstance(config, dict):
-            raise HTTPException(400, f"{name}: config must be an object")
-        ctype = config.get("type", "manual")
-        if ctype not in ADAPTERS:
-            raise HTTPException(400, f"{name}: unknown type '{ctype}'. Options: {', '.join(ADAPTERS)}")
-        for field in REQUIRED_CHANNEL_FIELDS[ctype]:
-            if not str(config.get(field, "")).strip():
-                raise HTTPException(400, f"{name}: '{ctype}' needs '{field}'")
+        destinations = value if isinstance(value, list) else [value]
+        if not destinations:
+            raise HTTPException(400, f"{name}: at least one destination is required")
+        for config in destinations:
+            _validate_destination(name, config)
     # Preserve everything else in the file (gsc config, _examples).
     raw = _load_channels_file(product)
     raw.update(body.channels)
@@ -376,15 +383,20 @@ TEST_ASSETS = {
 
 class ChannelTestBody(BaseModel):
     channel: str
+    index: int = 0  # which destination in the channel's list to test
 
 
 @app.post("/api/channels/{product}/test", dependencies=[Depends(require_api_key)])
 def test_channel(product: str, body: ChannelTestBody) -> dict:
     from .channels import ADAPTERS, ChannelError
+    from .publish import as_destinations
     _brand_dir_or_404(product)
     if body.channel not in CHANNEL_NAMES:
         raise HTTPException(400, f"unknown channel: {body.channel}")
-    config = _load_channels_file(product).get(body.channel, {"type": "manual"})
+    destinations = as_destinations(_load_channels_file(product).get(body.channel))
+    if not 0 <= body.index < len(destinations):
+        raise HTTPException(400, f"{body.channel} has no destination #{body.index}")
+    config = destinations[body.index]
     adapter = ADAPTERS.get(config.get("type", "manual"))
     if adapter is None:
         raise HTTPException(400, f"unknown adapter type '{config.get('type')}'")

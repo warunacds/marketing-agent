@@ -7,7 +7,7 @@ import { Markdown } from "@/components/markdown"
 import { RecheckFacts } from "@/components/recheck-facts"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { channelLabel, formatDate } from "@/lib/format"
+import { asReceipts, channelLabel, formatDate } from "@/lib/format"
 import { getItem, getJobs, type QueueState } from "@/lib/state"
 
 export const dynamic = "force-dynamic"
@@ -75,11 +75,17 @@ export default async function ItemPage({
             {state === "pending" && m.factcheck === "STALE" && !revising && (
               <RecheckFacts slug={slug} running={factcheckRunning} />
             )}
-            {Object.entries(published).map(([channel, info]) => (
-              <Badge key={channel} variant={info.status === "ok" ? "success" : "destructive"}>
-                {channelLabel(channel)}: {info.status === "ok" ? "sent" : info.status}
-              </Badge>
-            ))}
+            {Object.entries(published).flatMap(([channel, info]) =>
+              asReceipts(info).map((receipt, idx) => (
+                <Badge
+                  key={`${channel}-${idx}`}
+                  variant={receipt.status === "ok" ? "success" : "destructive"}
+                >
+                  {receipt.label ?? channelLabel(channel)}:{" "}
+                  {receipt.status === "ok" ? "sent" : receipt.status}
+                </Badge>
+              ))
+            )}
             {state === "rejected" && m.reason && (
               <span className="text-xs text-muted-foreground">Why: {m.reason}</span>
             )}

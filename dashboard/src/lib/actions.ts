@@ -115,9 +115,11 @@ export async function saveSchedule(
   }
 }
 
+type ChannelPayload = Record<string, unknown> | Record<string, unknown>[]
+
 export async function saveChannels(
   product: string,
-  channels: Record<string, Record<string, unknown>>
+  channels: Record<string, ChannelPayload>
 ): Promise<ActionResult> {
   try {
     const { output } = await api<{ output: string }>(
@@ -131,11 +133,15 @@ export async function saveChannels(
   }
 }
 
-export async function testChannel(product: string, channel: string): Promise<ActionResult> {
+export async function testChannel(
+  product: string,
+  channel: string,
+  index = 0
+): Promise<ActionResult> {
   try {
     const { output } = await api<{ output: string }>(
       `/api/channels/${encodeURIComponent(product)}/test`,
-      { method: "POST", body: JSON.stringify({ channel }) }
+      { method: "POST", body: JSON.stringify({ channel, index }) }
     )
     return { ok: true, output }
   } catch (e) {
