@@ -164,6 +164,33 @@ def publish_browser_reddit(text: str, meta: dict, config: dict) -> str:
     return detail + (f"; screenshot {shot}" if shot and shot.exists() else "")
 
 
+def publish_browser_linkedin(text: str, meta: dict, config: dict) -> str:
+    """Publish the LinkedIn post through a real browser, reusing a hand-saved session.
+
+    config: {"type": "browser_linkedin", "dry_run": bool?, "headed": bool?}.
+    """
+    from . import browser
+    section = _section(text, "LinkedIn post")
+    if not section or not section.strip():
+        raise ChannelError("could not find a '## LinkedIn post' section in the social asset")
+    if not browser.has_session("linkedin"):
+        raise ChannelError("no LinkedIn login saved — run `python -m marketing_agent login linkedin` "
+                           "once, then post again")
+    dry_run = bool(meta.get("dry_run") or config.get("dry_run"))
+    shot = None
+    slug = meta.get("slug")
+    if slug:
+        from .config import RUNS_DIR
+        shot = RUNS_DIR / "jobs" / f"post-linkedin-{slug}.png"
+    try:
+        detail = browser.post_to_linkedin(
+            section.strip(), dry_run=dry_run, headed=config.get("headed", True), screenshot=shot,
+        )
+    except browser.BrowserPosterError as e:
+        raise ChannelError(str(e)) from None
+    return detail + (f"; screenshot {shot}" if shot and shot.exists() else "")
+
+
 def publish_typefully(text: str, meta: dict, config: dict) -> str:
     """Create a Typefully DRAFT of the X thread (you still hit publish there).
 
@@ -228,6 +255,7 @@ ADAPTERS = {
     "typefully": publish_typefully,
     "browser_x": publish_browser_x,
     "browser_reddit": publish_browser_reddit,
+    "browser_linkedin": publish_browser_linkedin,
     "resend": publish_resend,
 }
 

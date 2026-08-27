@@ -17,6 +17,7 @@ const TYPE_LABELS: Record<string, string> = {
   resend: "Resend — drafts your newsletter",
   browser_x: "Post to X in a browser",
   browser_reddit: "Post to Reddit in a browser",
+  browser_linkedin: "Post to LinkedIn in a browser",
 }
 
 const SECRET_FOR: Record<string, { env: string; service: string }> = {
@@ -38,6 +39,12 @@ const BROWSER_META: Record<string, { platform: string; description: string; test
       "Opens a real browser and submits a post to a subreddit using a login you save once — no password stored here.",
     testNote: "Opens a browser and fills a test post — never submits.",
   },
+  browser_linkedin: {
+    platform: "linkedin",
+    description:
+      "Opens a real browser and publishes a post to your LinkedIn feed using a login you save once — no password stored here.",
+    testNote: "Opens a browser and composes a test post — never publishes.",
+  },
 }
 
 const CHANNEL_DEFS: {
@@ -51,7 +58,7 @@ const CHANNEL_DEFS: {
   {
     id: "social",
     label: "Social posts",
-    types: ["manual", "typefully", "browser_x", "browser_reddit", "webhook"],
+    types: ["manual", "typefully", "browser_x", "browser_reddit", "browser_linkedin", "webhook"],
     multiple: true,
     intro: "Post to as many places as you like — each posts on its own.",
   },
@@ -82,7 +89,7 @@ interface RowState {
 
 function rowFromConfig(c: ChannelConfig, id: number): RowState {
   const type = c.type ?? "manual"
-  const isBrowser = type === "browser_x" || type === "browser_reddit"
+  const isBrowser = Boolean(BROWSER_META[type])
   return {
     id,
     type,
@@ -141,11 +148,8 @@ function configFromRow(row: RowState): Record<string, unknown> {
     config.audience_id = row.audienceId.trim()
     config.from = row.from.trim()
   }
-  if (row.type === "browser_x") config.dry_run = row.dryRun
-  if (row.type === "browser_reddit") {
-    config.subreddit = row.subreddit.trim()
-    config.dry_run = row.dryRun
-  }
+  if (BROWSER_META[row.type]) config.dry_run = row.dryRun
+  if (row.type === "browser_reddit") config.subreddit = row.subreddit.trim()
   return config
 }
 
@@ -185,7 +189,7 @@ function DestinationFields({
 
   function changeType(newType: string) {
     const patch: Partial<RowState> = { type: newType }
-    if (newType === "browser_x" || newType === "browser_reddit") {
+    if (BROWSER_META[newType]) {
       // Safe default: dry-run on, unless this exact type was the saved config.
       patch.dryRun = row.initialType === newType ? Boolean(row.initialDry) : true
     }

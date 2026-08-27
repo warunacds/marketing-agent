@@ -34,10 +34,19 @@ X_LOGGED_OUT_MARKERS = ("/login", "/i/flow/login", "/i/flow/signup")
 REDDIT_SUBMIT_URL = "https://www.reddit.com/r/{subreddit}/submit?type=TEXT"
 REDDIT_LOGGED_OUT_MARKERS = ("/login", "/register")
 
+# LinkedIn — a single self-post via the feed composer (Quill editor).
+LINKEDIN_FEED_URL = "https://www.linkedin.com/feed/"
+LINKEDIN_LOGGED_OUT_MARKERS = ("/login", "/uas/login", "/checkpoint", "/authwall")
+LINKEDIN_START_POST = "button.share-box-feed-entry__trigger"
+LINKEDIN_EDITOR = '.ql-editor[contenteditable="true"]'
+LINKEDIN_POST_BUTTON = "button.share-actions__primary-action"
+
 PLATFORMS = {
     "x": {"login_url": "https://x.com/login", "home_url": "https://x.com/home", "label": "X"},
     "reddit": {"login_url": "https://www.reddit.com/login",
                "home_url": "https://www.reddit.com/", "label": "Reddit"},
+    "linkedin": {"login_url": "https://www.linkedin.com/login",
+                 "home_url": "https://www.linkedin.com/feed/", "label": "LinkedIn"},
 }
 
 
@@ -207,5 +216,70 @@ def post_to_reddit(subreddit: str, title: str, body: str, *, dry_run: bool = Fal
             submit.first.click()
             _human_pause(3.0)
             return f"submitted a text post to r/{subreddit}"
+        finally:
+            ctx.close()
+
+
+def post_to_linkedin(text: str, *, dry_run: bool = False, headed: bool = True,
+                     screenshot: Path | None = None) -> str:
+    """Publish a single self-post to LinkedIn using the saved profile."""
+    import re as _re
+    text = text.strip()
+    if not text:
+        raise BrowserPosterError("empty LinkedIn post")
+    if not has_session("linkedin"):
+        raise SessionExpired("no LinkedIn session — run: python -m marketing_agent login linkedin")
+    from playwright.sync_api import TimeoutError as PWTimeout, sync_playwright
+
+    with sync_playwright() as pw:
+        ctx = pw.chromium.launch_persistent_context(
+            str(_profile_dir("linkedin")), headless=not headed,
+            viewport={"width": 1280, "height": 900},
+        )
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            page.goto(LINKEDIN_FEED_URL, wait_until="domcontentloaded")
+            _human_pause(1.2)
+            if any(m in page.url for m in LINKEDIN_LOGGED_OUT_MARKERS):
+                raise SessionExpired("LinkedIn session expired — run: python -m marketing_agent login linkedin")
+
+            trigger = page.get_by_role("button", name=_re.compile("start a post", _re.I))
+            try:
+                trigger.first.wait_for(timeout=15000)
+            except PWTimeout:
+                trigger = page.locator(LINKEDIN_START_POST)
+                try:
+                    trigger.first.wait_for(timeout=8000)
+                except PWTimeout:
+                    raise SessionExpired(
+                        "couldn't reach the LinkedIn composer (session expired or the page changed) — "
+                        "run: python -m marketing_agent login linkedin"
+                    ) from None
+            trigger.first.click()
+            _human_pause(1.0)
+
+            editor = page.locator(LINKEDIN_EDITOR)
+            editor.first.wait_for(timeout=10000)
+            editor.first.click()
+            _human_pause(0.3)
+            page.keyboard.type(text, delay=8)
+            _human_pause(0.6)
+
+            if screenshot:
+                screenshot.parent.mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=str(screenshot))
+
+            if dry_run:
+                _human_pause(1.0)
+                return "DRY RUN — composed a LinkedIn post but did NOT publish. Nothing was posted."
+
+            post_btn = page.get_by_role("button", name=_re.compile(r"^post$", _re.I))
+            try:
+                post_btn.first.wait_for(timeout=5000)
+                post_btn.first.click()
+            except PWTimeout:
+                page.locator(LINKEDIN_POST_BUTTON).first.click()
+            _human_pause(3.0)
+            return "posted to LinkedIn"
         finally:
             ctx.close()

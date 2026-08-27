@@ -303,6 +303,7 @@ REQUIRED_CHANNEL_FIELDS = {
     "typefully": ("api_key_env",),
     "browser_x": (),
     "browser_reddit": ("subreddit",),
+    "browser_linkedin": (),
     "resend": ("api_key_env", "audience_id", "from"),
 }
 
