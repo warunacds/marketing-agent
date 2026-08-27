@@ -37,7 +37,7 @@ def _move(slug: str, dest_name: str, extra: dict) -> None:
     print(f"{slug} -> queue/{dest_name}/")
 
 
-def approve(slug: str, yes: bool = False) -> None:
+def approve(slug: str, yes: bool = False, by: str | None = None) -> None:
     m = _manifest(QUEUE_DIR / "pending" / slug) if (QUEUE_DIR / "pending" / slug).is_dir() else {}
     if m.get("factcheck") == "FAIL" and not yes:
         confirm = input("Fact-check FAILED for this item. Approve anyway? [y/N] ")
@@ -46,7 +46,7 @@ def approve(slug: str, yes: bool = False) -> None:
             return
     _move(slug, "approved", {
         "approved": True,
-        "approved_by": getpass.getuser(),
+        "approved_by": by or getpass.getuser(),
         "approved_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     })
     print(f"Approved. Publish with: python -m marketing_agent publish {slug}")

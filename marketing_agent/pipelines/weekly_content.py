@@ -16,21 +16,31 @@ from ..notify import notify
 from ..runner import log_step, run_agent
 
 
-def _task_header(product: str, date: str, brain: str) -> str:
+def _task_header(product: str, date: str, brain: str, instructions: str | None = None) -> str:
+    extra = (
+        f"# Operator instructions for this run\n\n{instructions.strip()}\n\n"
+        if instructions and instructions.strip() else ""
+    )
     return (
         f"Product: {product}\n"
         f"Date: {date}\n\n"
         f"# Brand brain\n\n{brain}\n\n"
+        f"{extra}"
         f"# Task\n\n"
     )
 
 
-async def run(product: str, gsc_data: str | None = None, model: str | None = None) -> None:
+async def run(
+    product: str,
+    gsc_data: str | None = None,
+    model: str | None = None,
+    instructions: str | None = None,
+) -> None:
     brain = load_brand(product)  # validates the product exists
     date = dt.date.today().isoformat()
     run_dir = RUNS_DIR / date / product
     run_dir.mkdir(parents=True, exist_ok=True)
-    header = _task_header(product, date, brain)
+    header = _task_header(product, date, brain, instructions)
 
     def save(name: str, text: str) -> None:
         (run_dir / name).write_text(text + "\n")

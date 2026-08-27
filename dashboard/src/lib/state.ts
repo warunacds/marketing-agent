@@ -1,26 +1,22 @@
-// Read-side data layer: everything the dashboard shows comes straight from
-// the repo's on-disk state (queue/, runs/, brands/). No database.
-import fs from "node:fs"
-import path from "node:path"
-
-// dashboard/ lives inside the marketing-agent repo
-export const REPO_ROOT = path.resolve(process.cwd(), "..")
-const QUEUE = path.join(REPO_ROOT, "queue")
-const RUNS = path.join(REPO_ROOT, "runs")
-const BRANDS = path.join(REPO_ROOT, "brands")
+// Read-side data layer: everything the dashboard shows comes from the FastAPI
+// backend (marketing_agent/api.py). All calls are uncached so the queue is
+// always fresh.
+import { api, ApiError } from "./api"
 
 export type QueueState = "pending" | "approved" | "published" | "rejected"
 
 export interface Manifest {
-  product: string
-  date: string
-  factcheck?: "PASS" | "FAIL"
+  product?: string
+  date?: string
+  factcheck?: "PASS" | "FAIL" | "STALE"
   files?: string[]
   approved?: boolean
   reason?: string
   approved_by?: string
   approved_at?: string
   rejected_at?: string
+  revising?: boolean
+  revisions?: { at: string; feedback: string }[]
   published?: Record<string, { status: string; adapter?: string; at?: string; detail?: string }>
 }
 
@@ -30,61 +26,139 @@ export interface QueueItem {
   manifest: Manifest
 }
 
-function readJson<T>(file: string): T | null {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as T
-  } catch {
-    return null
-  }
-}
+type RawQueueItem = { slug: string } & Manifest
 
-function listDirs(dir: string): string[] {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name)
-      .sort()
-      .reverse()
-  } catch {
-    return []
-  }
-}
-
-export function getProducts(): string[] {
-  return listDirs(BRANDS)
-    .filter((name) => !name.startsWith("_"))
-    .sort()
-}
-
-export function getQueue(): QueueItem[] {
+export async function getQueue(): Promise<QueueItem[]> {
+  const data = await api<Record<QueueState, RawQueueItem[]>>("/api/queue")
   const states: QueueState[] = ["pending", "approved", "published", "rejected"]
-  const items: QueueItem[] = []
-  for (const state of states) {
-    for (const slug of listDirs(path.join(QUEUE, state))) {
-      const manifest =
-        readJson<Manifest>(path.join(QUEUE, state, slug, "manifest.json")) ??
-        ({ product: "?", date: "?" } as Manifest)
-      items.push({ slug, state, manifest })
-    }
-  }
-  return items
+  return states.flatMap((state) =>
+    (data[state] ?? []).map(({ slug, ...manifest }) => ({ slug, state, manifest }))
+  )
 }
 
-export function getItem(state: QueueState, slug: string) {
-  const dir = path.join(QUEUE, state, slug)
-  if (!fs.existsSync(dir) || !dir.startsWith(QUEUE)) return null
-  const manifest = readJson<Manifest>(path.join(dir, "manifest.json"))
-  const files: Record<string, string> = {}
-  for (const f of fs.readdirSync(dir).sort()) {
-    if (f.endsWith(".md")) files[f] = fs.readFileSync(path.join(dir, f), "utf8")
-  }
-  return { slug, state, manifest, files }
+export interface ItemDetail {
+  slug: string
+  state: QueueState
+  manifest: Manifest
+  files: Record<string, string>
 }
 
-export interface CostRow {
+export async function getItem(state: QueueState, slug: string): Promise<ItemDetail | null> {
+  try {
+    const data = await api<{
+      slug: string
+      state: QueueState
+      manifest: Manifest
+      files: { name: string; content: string }[]
+    }>(`/api/items/${encodeURIComponent(state)}/${encodeURIComponent(slug)}`)
+    const files: Record<string, string> = {}
+    for (const f of data.files) files[f.name] = f.content
+    return { slug: data.slug, state: data.state, manifest: data.manifest, files }
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 400)) return null
+    throw e
+  }
+}
+
+export interface Brand {
+  product: string
+  files: string[]
+}
+
+export async function getBrands(): Promise<Brand[]> {
+  return api<Brand[]>("/api/brands")
+}
+
+export async function getProducts(): Promise<string[]> {
+  return (await getBrands()).map((b) => b.product)
+}
+
+export interface BrandDetail {
+  product: string
+  files: { name: string; content: string }[]
+}
+
+export async function getBrand(product: string): Promise<BrandDetail | null> {
+  try {
+    return await api<BrandDetail>(`/api/brands/${encodeURIComponent(product)}`)
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 400)) return null
+    throw e
+  }
+}
+
+export type JobStatus = "running" | "done" | "failed" | "interrupted"
+
+export interface Job {
+  id: string
+  status: JobStatus
+}
+
+export async function getJobs(): Promise<Job[]> {
+  return api<Job[]>("/api/jobs")
+}
+
+export interface JobDetail extends Job {
+  log: string
+}
+
+export async function getJob(id: string): Promise<JobDetail | null> {
+  try {
+    return await api<JobDetail>(`/api/jobs/${encodeURIComponent(id)}`)
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 400)) return null
+    throw e
+  }
+}
+
+export interface Schedule {
+  product: string
+  enabled: boolean
+  day: string
+  hour: number
+  instructions: string
+  last_run?: string
+  report_enabled: boolean
+  report_day: string
+  report_hour: number
+  report_last_run?: string
+}
+
+export async function getSchedules(): Promise<Schedule[]> {
+  return api<Schedule[]>("/api/schedule")
+}
+
+export interface ChannelConfig {
+  type: string
+  [key: string]: unknown
+}
+
+export type Channels = Record<"blog" | "social" | "newsletter", ChannelConfig>
+
+export async function getChannels(product: string): Promise<Channels> {
+  return api<Channels>(`/api/channels/${encodeURIComponent(product)}`)
+}
+
+/** Which secret env vars are set on the server (never their values). */
+export async function getSecrets(names: string[]): Promise<Record<string, boolean>> {
+  const rows = await api<{ name: string; set: boolean }[]>(
+    `/api/secrets?names=${encodeURIComponent(names.join(","))}`
+  )
+  return Object.fromEntries(rows.map((r) => [r.name, r.set]))
+}
+
+export interface RunSummary {
   date: string
   product: string
+  files: string[]
+  total_cost_usd: number
+}
+
+export async function getRuns(): Promise<RunSummary[]> {
+  return api<RunSummary[]>("/api/runs")
+}
+
+export interface RunCostStep {
   agent: string
   model: string
   input_tokens: number | null
@@ -93,59 +167,37 @@ export interface CostRow {
   duration_s: number
 }
 
-export function getCosts(): CostRow[] {
-  const rows: CostRow[] = []
-  for (const date of listDirs(RUNS)) {
-    for (const product of listDirs(path.join(RUNS, date))) {
-      const file = path.join(RUNS, date, product, "costs.jsonl")
-      if (!fs.existsSync(file)) continue
-      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-        if (!line.trim()) continue
-        try {
-          rows.push({ date, product, ...JSON.parse(line) })
-        } catch {
-          /* skip bad lines */
-        }
-      }
-    }
+export interface RunCosts {
+  date: string
+  product: string
+  steps: RunCostStep[]
+  total_cost_usd: number
+}
+
+export async function getRunFile(date: string, product: string, file: string): Promise<string> {
+  const { content } = await api<{ content: string }>(
+    `/api/runs/${encodeURIComponent(date)}/${encodeURIComponent(product)}/${encodeURIComponent(file)}`
+  )
+  return content
+}
+
+export interface Todo {
+  file: string
+  line: number
+  text: string
+}
+
+export async function getTodos(product: string): Promise<Todo[]> {
+  return api<Todo[]>(`/api/brands/${encodeURIComponent(product)}/todos`)
+}
+
+export async function getRunCosts(date: string, product: string): Promise<RunCosts | null> {
+  try {
+    return await api<RunCosts>(
+      `/api/runs/${encodeURIComponent(date)}/${encodeURIComponent(product)}/costs`
+    )
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 400)) return null
+    throw e
   }
-  return rows
-}
-
-export function getBrandFiles(product: string): string[] {
-  const dir = path.join(BRANDS, product)
-  if (!fs.existsSync(dir) || product.startsWith("_") || product.includes("/")) return []
-  return fs.readdirSync(dir).filter((f) => f.endsWith(".md") || f.endsWith(".json")).sort()
-}
-
-export function getBrandFile(product: string, file: string): string | null {
-  if (product.includes("/") || product.includes("..") || file.includes("/") || file.includes(".."))
-    return null
-  const p = path.join(BRANDS, product, file)
-  return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null
-}
-
-export interface Job {
-  id: string
-  log: string
-  running: boolean
-}
-
-export function getJobs(): Job[] {
-  const dir = path.join(RUNS, "jobs")
-  if (!fs.existsSync(dir)) return []
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith(".log"))
-    .sort()
-    .reverse()
-    .slice(0, 20)
-    .map((f) => {
-      const log = fs.readFileSync(path.join(dir, f), "utf8")
-      return {
-        id: f.replace(/\.log$/, ""),
-        log,
-        running: !log.includes("=== JOB EXIT"),
-      }
-    })
 }

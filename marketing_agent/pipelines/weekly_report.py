@@ -43,10 +43,16 @@ async def run(product: str, metrics_file: str | None = None, model: str | None =
     if metrics_file:
         metrics = "Metrics provided:\n\n" + Path(metrics_file).read_text()
     else:
-        metrics = (
-            "No metrics were provided this week. Base the report on the "
-            "production stats below."
-        )
+        from ..channels import load_channels
+        from ..gsc import fetch_gsc_data
+        gsc = fetch_gsc_data(load_channels(brand).get("gsc", {}))
+        if gsc:
+            metrics = "Search Console data (last 28 days, auto-pulled):\n\n" + gsc
+        else:
+            metrics = (
+                "No metrics were provided this week. Base the report on the "
+                "production stats below."
+            )
 
     result = await run_agent(
         "analyst",

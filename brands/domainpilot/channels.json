@@ -1,0 +1,39 @@
+{
+  "_comment": "Distribution config. Every channel defaults to type 'manual' (prints the asset). Adapters: manual | dir | webhook | typefully (social) | resend (newsletter). Delete this key.",
+  "blog": {
+    "type": "manual"
+  },
+  "_blog_examples": {
+    "git_dir": {
+      "type": "dir",
+      "path": "~/code/my-site/content/blog"
+    },
+    "cms_webhook": {
+      "type": "webhook",
+      "url": "https://your-cms/api/posts",
+      "headers": {
+        "Authorization": "Bearer ..."
+      }
+    }
+  },
+  "social": {
+    "type": "manual"
+  },
+  "_social_example": {
+    "type": "typefully",
+    "api_key_env": "TYPEFULLY_API_KEY"
+  },
+  "newsletter": {
+    "type": "manual"
+  },
+  "_newsletter_example": {
+    "type": "resend",
+    "api_key_env": "RESEND_API_KEY",
+    "audience_id": "aud_...",
+    "from": "You <you@yourdomain.com>"
+  },
+  "_gsc_example": {
+    "site_url": "sc-domain:yourdomain.com",
+    "credentials_env": "GSC_CREDENTIALS_FILE"
+  }
+}

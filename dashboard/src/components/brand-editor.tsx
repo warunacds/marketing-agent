@@ -31,12 +31,9 @@ export function BrandEditor({
         disabled={pending || !dirty}
         onClick={() =>
           startTransition(async () => {
-            try {
-              const result = await saveBrandFile(product, file, content)
-              toast.success("Saved", { description: result.output })
-            } catch (e) {
-              toast.error("Save failed", { description: String(e) })
-            }
+            const result = await saveBrandFile(product, file, content)
+            if (result.ok) toast.success("Saved", { description: result.output })
+            else toast.error("Could not save", { description: result.output })
           })
         }
       >

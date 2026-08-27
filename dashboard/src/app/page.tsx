@@ -1,40 +1,34 @@
 import Link from "next/link"
+import { CreateContentDialog } from "@/components/create-content-dialog"
 import { FactcheckBadge } from "@/components/factcheck-badge"
-import { RunPipeline } from "@/components/run-pipeline"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { getProducts, getQueue, type QueueItem } from "@/lib/state"
+import { channelLabel, contentSummary, formatDate } from "@/lib/format"
+import { getProducts, getQueue, type QueueItem, type QueueState } from "@/lib/state"
 
 export const dynamic = "force-dynamic"
 
 function ItemCard({ item }: { item: QueueItem }) {
   const m = item.manifest
-  const published = m.published ?? {}
+  const summary = contentSummary(m.files)
+  const publishedChannels = Object.keys(m.published ?? {})
   return (
     <Link href={`/item/${item.state}/${item.slug}`}>
-      <Card className="transition-colors hover:bg-accent/40">
+      <Card className="h-full transition-colors hover:bg-accent/40">
         <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base">{m.product}</CardTitle>
-            <FactcheckBadge verdict={m.factcheck} />
-          </div>
-          <CardDescription>{item.slug}</CardDescription>
+          <CardTitle className="text-base">{m.product ?? item.slug}</CardTitle>
+          <CardDescription>{formatDate(m.date)}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-1.5">
-          {item.state === "approved" &&
-            ["blog", "social", "newsletter"].map((c) => (
-              <Badge key={c} variant={published[c]?.status === "ok" ? "success" : "outline"}>
-                {c}
-              </Badge>
-            ))}
+        <CardContent className="space-y-2">
+          {summary && <p className="text-sm text-muted-foreground">{summary}</p>}
+          <FactcheckBadge verdict={m.factcheck} />
           {item.state === "rejected" && m.reason && (
-            <span className="text-xs text-muted-foreground">reason: {m.reason}</span>
+            <p className="text-xs text-muted-foreground">Why: {m.reason}</p>
           )}
-          {item.state === "published" && (
-            <span className="text-xs text-muted-foreground">
-              published {Object.keys(published).join(", ")}
-            </span>
+          {item.state === "published" && publishedChannels.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Published to {publishedChannels.map(channelLabel).join(", ")}
+            </p>
           )}
         </CardContent>
       </Card>
@@ -61,32 +55,31 @@ function Section({ title, items, empty }: { title: string; items: QueueItem[]; e
   )
 }
 
-export default function QueuePage() {
-  const queue = getQueue()
-  const products = getProducts()
-  const by = (s: string) => queue.filter((i) => i.state === s)
+export default async function ReviewPage() {
+  const [queue, products] = await Promise.all([getQueue(), getProducts()])
+  const by = (s: QueueState) => queue.filter((i) => i.state === s)
 
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Review queue</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Review</h1>
           <p className="text-sm text-muted-foreground">
-            Drafts wait here until a human approves them. Nothing publishes on its own.
+            The AI drafts your marketing content — nothing goes out until you approve it here.
           </p>
         </div>
-        <RunPipeline products={products} />
+        <CreateContentDialog products={products} />
       </div>
       <Section
-        title="Pending review"
+        title="Waiting for your review"
         items={by("pending")}
-        empty="Nothing waiting. Run the content pipeline to generate drafts."
+        empty={'Nothing to review right now. Press "Create this week\'s content" to get started.'}
       />
       <Separator />
       <Section
         title="Approved — ready to publish"
         items={by("approved")}
-        empty="No approved items."
+        empty="Nothing approved yet. Approved content waits here until you publish it."
       />
       <Separator />
       <Section title="Published" items={by("published")} empty="Nothing published yet." />
