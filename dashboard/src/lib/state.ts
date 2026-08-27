@@ -190,6 +190,8 @@ export interface BrowserSession {
   label: string
   logged_in: boolean
   login_command: string
+  /** True while a login window this backend opened is still on screen. */
+  login_in_progress: boolean
 }
 
 export async function getBrowserSessions(): Promise<BrowserSession[]> {

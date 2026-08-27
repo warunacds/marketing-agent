@@ -3,7 +3,16 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { saveChannels, saveSecret, testChannel } from "@/lib/actions"
+import {
+  cancelBrowserLogin,
+  confirmBrowserLogin,
+  loginBrowser,
+  logoutBrowser,
+  saveChannels,
+  saveSecret,
+  testChannel,
+} from "@/lib/actions"
+import { AutoRefresh } from "@/components/auto-refresh"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -153,6 +162,81 @@ function configFromRow(row: RowState): Record<string, unknown> {
   return config
 }
 
+// ---- per-platform browser login ----------------------------------------
+// Login is keyed by platform, not by row: two rows on the same platform (e.g.
+// two browser_x destinations) share one saved session, so they show one status.
+
+function BrowserLoginControls({
+  session,
+  inProgress,
+  busy,
+  onLogin,
+  onConfirm,
+  onCancel,
+  onLogout,
+}: {
+  session: BrowserSession
+  inProgress: boolean
+  busy: boolean
+  onLogin: () => void
+  onConfirm: () => void
+  onCancel: () => void
+  onLogout: () => void
+}) {
+  return (
+    <div className="space-y-2">
+      {inProgress ? (
+        <div className="space-y-2 rounded-md border px-3 py-2">
+          <p className="text-sm">
+            A browser window opened — log in there, then come back and click below.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={busy} onClick={onConfirm}>
+              I&apos;ve finished logging in
+            </Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : session.logged_in ? (
+        <p className="text-sm">
+          <span className="text-success">✓ Logged into {session.label}</span>{" "}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onLogin}
+            className="cursor-pointer text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Log in again
+          </button>{" "}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onLogout}
+            className="cursor-pointer text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Log out
+          </button>
+        </p>
+      ) : (
+        <>
+          <Button size="sm" disabled={busy} onClick={onLogin}>
+            Log in to {session.label}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            or run <code className="rounded bg-muted px-1 py-0.5">{session.login_command}</code> in
+            your terminal
+          </p>
+        </>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Opens a browser on the machine running this app.
+      </p>
+    </div>
+  )
+}
+
 // ---- one destination form ----------------------------------------------
 
 function DestinationFields({
@@ -168,6 +252,11 @@ function DestinationFields({
   onTest,
   testResult,
   busy,
+  optimisticLogin,
+  onLogin,
+  onConfirmLogin,
+  onCancelLogin,
+  onLogoutBrowser,
 }: {
   product: string
   channelId: string
@@ -181,6 +270,11 @@ function DestinationFields({
   onTest: () => void
   testResult?: { ok: boolean; text: string }
   busy: boolean
+  optimisticLogin: Record<string, boolean>
+  onLogin: (platform: string) => void
+  onConfirmLogin: (platform: string) => void
+  onCancelLogin: (platform: string) => void
+  onLogoutBrowser: (platform: string) => void
 }) {
   const fid = (suffix: string) => `ch-${product}-${channelId}-${row.id}-${suffix}`
   const secret = SECRET_FOR[row.type]
@@ -318,25 +412,18 @@ function DestinationFields({
           {(() => {
             const session = browserSessions.find((s) => s.platform === browser.platform)
             if (!session) return null
-            return session.logged_in ? (
-              <p className="text-sm">
-                <span className="text-success">✓ Logged into {session.label}</span>{" "}
-                <span className="text-xs text-muted-foreground">
-                  (to re-login, run <code>{session.login_command}</code> again)
-                </span>
-              </p>
-            ) : (
-              <div className="space-y-1.5 rounded-md border px-3 py-2">
-                <p className="text-sm">
-                  One-time setup: run this in your terminal, then log in when the browser opens:
-                </p>
-                <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">
-                  <code>{session.login_command}</code>
-                </pre>
-                <p className="text-xs text-muted-foreground">
-                  You only need to do this once — the login is remembered until the session expires.
-                </p>
-              </div>
+            const inProgress =
+              session.login_in_progress || Boolean(optimisticLogin[browser.platform])
+            return (
+              <BrowserLoginControls
+                session={session}
+                inProgress={inProgress}
+                busy={busy}
+                onLogin={() => onLogin(browser.platform)}
+                onConfirm={() => onConfirmLogin(browser.platform)}
+                onCancel={() => onCancelLogin(browser.platform)}
+                onLogout={() => onLogoutBrowser(browser.platform)}
+              />
             )
           })()}
 
@@ -452,6 +539,69 @@ export function PublishingCard({
   const [tests, setTests] = useState<Record<number, { ok: boolean; text: string }>>({})
   const [busy, setBusy] = useState(false)
   const [pending, startTransition] = useTransition()
+  // Per-platform optimistic flag so the in-progress UI shows the instant Log in
+  // is clicked, before the polled getBrowserSessions catches up.
+  const [optimisticLogin, setOptimisticLogin] = useState<Record<string, boolean>>({})
+
+  function beginLogin(platform: string) {
+    startTransition(async () => {
+      setOptimisticLogin((p) => ({ ...p, [platform]: true }))
+      const result = await loginBrowser(platform)
+      if (result.ok) {
+        toast.success("Browser opened", {
+          description: "Log in there, then come back and confirm.",
+        })
+        router.refresh()
+      } else {
+        setOptimisticLogin((p) => ({ ...p, [platform]: false }))
+        toast.error("Could not open the browser", { description: result.output.slice(0, 400) })
+      }
+    })
+  }
+
+  function finishLogin(platform: string) {
+    startTransition(async () => {
+      const result = await confirmBrowserLogin(platform)
+      setOptimisticLogin((p) => ({ ...p, [platform]: false }))
+      if (result.ok) {
+        toast.success("Logged in")
+      } else {
+        toast.error("Could not confirm the login", { description: result.output.slice(0, 400) })
+      }
+      router.refresh()
+    })
+  }
+
+  function cancelLogin(platform: string) {
+    startTransition(async () => {
+      const result = await cancelBrowserLogin(platform)
+      setOptimisticLogin((p) => ({ ...p, [platform]: false }))
+      if (result.ok) {
+        toast("Login cancelled")
+      } else {
+        toast.error("Could not cancel", { description: result.output.slice(0, 400) })
+      }
+      router.refresh()
+    })
+  }
+
+  function logoutPlatform(platform: string) {
+    startTransition(async () => {
+      const result = await logoutBrowser(platform)
+      if (result.ok) {
+        toast("Logged out")
+      } else {
+        // 409 (a login window is open) and other errors both surface their message.
+        toast.error("Could not log out", { description: result.output.slice(0, 400) })
+      }
+      router.refresh()
+    })
+  }
+
+  // Poll browser-sessions while any login window is open so the state stays live.
+  const loginInProgress =
+    browserSessions.some((s) => s.login_in_progress) ||
+    Object.values(optimisticLogin).some(Boolean)
 
   function updateRow(channelId: string, id: number, patch: Partial<RowState>) {
     setRowsByChannel((prev) => ({
@@ -561,6 +711,7 @@ export function PublishingCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <AutoRefresh active={loginInProgress} />
         {CHANNEL_DEFS.map((def, defIndex) => {
           const rows = rowsByChannel[def.id]
           return (
@@ -588,6 +739,11 @@ export function PublishingCard({
                     onTest={() => sendTest(def.id, i, row.id)}
                     testResult={tests[row.id]}
                     busy={working}
+                    optimisticLogin={optimisticLogin}
+                    onLogin={beginLogin}
+                    onConfirmLogin={finishLogin}
+                    onCancelLogin={cancelLogin}
+                    onLogoutBrowser={logoutPlatform}
                   />
                 </div>
               ))}

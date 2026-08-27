@@ -16,6 +16,8 @@ export interface ActionResult {
   code?: string
   /** Background job started by this action, when there is one. */
   jobId?: string
+  /** Machine-readable status from browser-login endpoints (opening | already_open | saved | cancelled). */
+  status?: string
 }
 
 function failure(e: unknown): ActionResult {
@@ -260,6 +262,59 @@ export async function runPipeline(
     })
     revalidatePath("/runs")
     return { ok: true, output: `Started (job ${job_id})` }
+  } catch (e) {
+    return failure(e)
+  }
+}
+
+// Browser-login flow: the backend runs on the same machine as the user, so it
+// can open a real headed browser for them to log in to X / Reddit / LinkedIn.
+export async function loginBrowser(platform: string): Promise<ActionResult> {
+  try {
+    const { status, message } = await api<{ status: string; message?: string }>(
+      `/api/browser-sessions/${encodeURIComponent(platform)}/login`,
+      { method: "POST", body: JSON.stringify({}) }
+    )
+    return { ok: true, output: message ?? status, status }
+  } catch (e) {
+    return failure(e)
+  }
+}
+
+export async function confirmBrowserLogin(platform: string): Promise<ActionResult> {
+  try {
+    const { status, message } = await api<{ status: string; message?: string }>(
+      `/api/browser-sessions/${encodeURIComponent(platform)}/login/confirm`,
+      { method: "POST", body: JSON.stringify({}) }
+    )
+    revalidatePath("/brands", "layout")
+    return { ok: true, output: message ?? status, status }
+  } catch (e) {
+    return failure(e)
+  }
+}
+
+export async function cancelBrowserLogin(platform: string): Promise<ActionResult> {
+  try {
+    const { status, message } = await api<{ status: string; message?: string }>(
+      `/api/browser-sessions/${encodeURIComponent(platform)}/login/cancel`,
+      { method: "POST", body: JSON.stringify({}) }
+    )
+    revalidatePath("/brands", "layout")
+    return { ok: true, output: message ?? status, status }
+  } catch (e) {
+    return failure(e)
+  }
+}
+
+export async function logoutBrowser(platform: string): Promise<ActionResult> {
+  try {
+    const { status, message } = await api<{ status: string; message?: string }>(
+      `/api/browser-sessions/${encodeURIComponent(platform)}`,
+      { method: "DELETE" }
+    )
+    revalidatePath("/brands", "layout")
+    return { ok: true, output: message ?? status, status }
   } catch (e) {
     return failure(e)
   }

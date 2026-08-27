@@ -419,16 +419,93 @@ def test_channel(product: str, body: ChannelTestBody) -> dict:
 
 # ---------------------------------------------------------------- browser sessions
 
+_login_flows: dict[str, dict] = {}  # platform -> {done, cancel, thread, status}
+
+
 @app.get("/api/browser-sessions", dependencies=[Depends(require_api_key)])
 def browser_sessions() -> list[dict]:
-    """Which social platforms have a saved browser login. Logging in is a headed
-    terminal step (`python -m marketing_agent login <platform>`), not an API call."""
+    """Which social platforms have a saved browser login, and whether a login
+    browser is currently open (started from the dashboard)."""
     from .browser import PLATFORMS, has_session
-    return [
-        {"platform": p, "label": meta["label"], "logged_in": has_session(p),
-         "login_command": f"python -m marketing_agent login {p}"}
-        for p, meta in PLATFORMS.items()
-    ]
+    out = []
+    for p, meta in PLATFORMS.items():
+        flow = _login_flows.get(p)
+        out.append({
+            "platform": p, "label": meta["label"], "logged_in": has_session(p),
+            "login_command": f"python -m marketing_agent login {p}",
+            "login_in_progress": bool(flow and flow["thread"].is_alive()),
+        })
+    return out
+
+
+def _known_platform(platform: str) -> str:
+    from .browser import PLATFORMS
+    if platform not in PLATFORMS:
+        raise HTTPException(404, f"unknown platform: {platform}")
+    return platform
+
+
+@app.post("/api/browser-sessions/{platform}/login", dependencies=[Depends(require_api_key)])
+def start_browser_login(platform: str) -> dict:
+    """Open a headed browser on THIS machine for a one-time login. Only works when
+    the backend runs where the operator can see the window (i.e. locally)."""
+    import threading
+    from .browser import PLATFORMS, open_login_browser
+    _known_platform(platform)
+    flow = _login_flows.get(platform)
+    if flow and flow["thread"].is_alive():
+        return {"status": "already_open",
+                "message": f"A {PLATFORMS[platform]['label']} login window is already open."}
+    done, cancel = threading.Event(), threading.Event()
+
+    def _run() -> None:
+        try:
+            _login_flows[platform]["status"] = open_login_browser(platform, done, cancel)
+        except Exception as e:  # e.g. no display on a headless server
+            _login_flows[platform]["status"] = f"error: {e}"
+
+    thread = threading.Thread(target=_run, daemon=True)
+    _login_flows[platform] = {"done": done, "cancel": cancel, "thread": thread, "status": "open"}
+    thread.start()
+    return {"status": "opening",
+            "message": f"A browser window is opening. Log into {PLATFORMS[platform]['label']}, "
+                       f"then click ‘I’ve finished logging in’."}
+
+
+@app.post("/api/browser-sessions/{platform}/login/confirm", dependencies=[Depends(require_api_key)])
+def confirm_browser_login(platform: str) -> dict:
+    from .browser import has_session
+    _known_platform(platform)
+    flow = _login_flows.get(platform)
+    if not flow or not flow["thread"].is_alive():
+        if has_session(platform):
+            return {"status": "saved"}
+        raise HTTPException(409, "no login window is open — start the login first")
+    flow["done"].set()
+    flow["thread"].join(timeout=20)
+    return {"status": "saved" if has_session(platform) else flow.get("status", "unknown")}
+
+
+@app.post("/api/browser-sessions/{platform}/login/cancel", dependencies=[Depends(require_api_key)])
+def cancel_browser_login(platform: str) -> dict:
+    _known_platform(platform)
+    flow = _login_flows.get(platform)
+    if flow and flow["thread"].is_alive():
+        flow["cancel"].set()
+        flow["thread"].join(timeout=20)
+    return {"status": "cancelled"}
+
+
+@app.delete("/api/browser-sessions/{platform}", dependencies=[Depends(require_api_key)])
+def clear_browser_session(platform: str) -> dict:
+    """Forget a saved login (log out on this machine)."""
+    from .browser import PLATFORMS, clear_session
+    _known_platform(platform)
+    flow = _login_flows.get(platform)
+    if flow and flow["thread"].is_alive():
+        raise HTTPException(409, "a login window is open for this platform — finish or cancel it first")
+    clear_session(platform)
+    return {"status": "cleared", "message": f"logged out of {PLATFORMS[platform]['label']}"}
 
 
 # ---------------------------------------------------------------- secrets

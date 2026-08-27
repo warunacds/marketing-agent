@@ -62,10 +62,29 @@ def _profile_dir(platform: str) -> Path:
     return SESSIONS_DIR / f"{platform}-profile"
 
 
+def _confirmed_marker(platform: str) -> Path:
+    return _profile_dir(platform) / ".login-confirmed"
+
+
+def _mark_confirmed(platform: str) -> None:
+    """Record that a login was actually completed (not just that a browser opened)."""
+    _profile_dir(platform).mkdir(parents=True, exist_ok=True)
+    _confirmed_marker(platform).touch()
+
+
 def has_session(platform: str) -> bool:
-    """True if a login profile exists. Real validity is only known at post time."""
+    """True only after a login was completed. Merely opening the login browser
+    creates the profile dir, so we require an explicit confirmation marker.
+    Real cookie validity is still only known at post time."""
+    return _confirmed_marker(platform).exists()
+
+
+def clear_session(platform: str) -> None:
+    """Forget a saved login by removing its whole profile."""
+    import shutil
     d = _profile_dir(platform)
-    return d.is_dir() and any(d.iterdir())
+    if d.exists():
+        shutil.rmtree(d)
 
 
 def save_login(platform: str) -> None:
@@ -88,9 +107,42 @@ def save_login(platform: str) -> None:
         page.goto(meta["login_url"])
         try:
             input("Press Enter once you're logged in (or Ctrl-C to cancel)… ")
+            _mark_confirmed(platform)  # only after the operator confirms
         finally:
             ctx.close()
     print(f"Saved {meta['label']} session to {profile}")
+
+
+def open_login_browser(platform: str, done_event, cancel_event, timeout: float = 600) -> str:
+    """Headed login driven from the dashboard: open the login page and hold the
+    browser until the operator signals done (a UI button sets done_event), cancels,
+    or the timeout lapses. The persistent profile saves cookies as they log in, so
+    closing is enough. Returns 'saved' | 'cancelled' | 'timeout'."""
+    if platform not in PLATFORMS:
+        raise BrowserPosterError(f"unknown platform '{platform}'. Known: {', '.join(PLATFORMS)}")
+    from playwright.sync_api import sync_playwright
+
+    profile = _profile_dir(platform)
+    profile.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as pw:
+        ctx = pw.chromium.launch_persistent_context(
+            str(profile), headless=False, viewport={"width": 1280, "height": 900},
+        )
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto(PLATFORMS[platform]["login_url"])
+        waited = 0.0
+        while waited < timeout and not done_event.is_set() and not cancel_event.is_set():
+            time.sleep(0.5)
+            waited += 0.5
+        if done_event.is_set():
+            _mark_confirmed(platform)  # only a confirmed login counts as a session
+        try:
+            ctx.close()
+        except Exception:
+            pass
+    if done_event.is_set():
+        return "saved"
+    return "cancelled" if cancel_event.is_set() else "timeout"
 
 
 def _human_pause(seconds: float = 0.6) -> None:
