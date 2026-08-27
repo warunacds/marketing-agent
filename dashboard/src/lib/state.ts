@@ -31,12 +31,13 @@ export interface QueueItem {
 
 type RawQueueItem = { slug: string } & Manifest
 
-export async function getQueue(): Promise<QueueItem[]> {
+export async function getQueue(product?: string): Promise<QueueItem[]> {
   const data = await api<Record<QueueState, RawQueueItem[]>>("/api/queue")
   const states: QueueState[] = ["pending", "approved", "published", "rejected"]
-  return states.flatMap((state) =>
+  const items = states.flatMap((state) =>
     (data[state] ?? []).map(({ slug, ...manifest }) => ({ slug, state, manifest }))
   )
+  return product ? items.filter((i) => i.manifest.product === product) : items
 }
 
 export interface ItemDetail {
@@ -97,8 +98,10 @@ export interface Job {
   status: JobStatus
 }
 
-export async function getJobs(): Promise<Job[]> {
-  return api<Job[]>("/api/jobs")
+export async function getJobs(product?: string): Promise<Job[]> {
+  const jobs = await api<Job[]>("/api/jobs")
+  // Job ids end in "-<kind>-<product>" (see describeJob in format.ts).
+  return product ? jobs.filter((j) => j.id.endsWith(`-${product}`)) : jobs
 }
 
 export interface JobDetail extends Job {
@@ -158,8 +161,9 @@ export interface RunSummary {
   total_cost_usd: number
 }
 
-export async function getRuns(): Promise<RunSummary[]> {
-  return api<RunSummary[]>("/api/runs")
+export async function getRuns(product?: string): Promise<RunSummary[]> {
+  const runs = await api<RunSummary[]>("/api/runs")
+  return product ? runs.filter((r) => r.product === product) : runs
 }
 
 export interface RunCostStep {

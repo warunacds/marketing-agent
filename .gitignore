@@ -17,3 +17,6 @@ queue/published/*
 
 # Browser automation login profiles (never commit — they are live sessions)
 sessions/
+
+# Playwright MCP screenshot artifacts
+.playwright-mcp/

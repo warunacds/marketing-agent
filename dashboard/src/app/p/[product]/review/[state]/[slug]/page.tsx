@@ -1,7 +1,9 @@
+import Link from "next/link"
 import { notFound } from "next/navigation"
+import { ArrowLeftIcon } from "lucide-react"
 import { AutoRefresh } from "@/components/auto-refresh"
 import { DraftEditor } from "@/components/draft-editor"
-import { FactcheckBadge } from "@/components/factcheck-badge"
+import { FactcheckPill } from "@/components/factcheck-pill"
 import { ItemActions } from "@/components/item-actions"
 import { Markdown } from "@/components/markdown"
 import { RecheckFacts } from "@/components/recheck-facts"
@@ -16,7 +18,7 @@ const STATE_LABELS: Record<string, string> = {
   pending: "Waiting for review",
   approved: "Approved — ready to publish",
   published: "Published",
-  rejected: "Rejected",
+  rejected: "Didn't use",
 }
 
 const MAIN_TABS: [string, string][] = [
@@ -31,9 +33,9 @@ const EDITABLE_FILES = ["03-post.md", "04-social.md", "05-newsletter.md"]
 export default async function ItemPage({
   params,
 }: {
-  params: Promise<{ state: string; slug: string }>
+  params: Promise<{ product: string; state: string; slug: string }>
 }) {
-  const { state, slug } = await params
+  const { product, state, slug } = await params
   if (!["pending", "approved", "published", "rejected"].includes(state)) notFound()
   const item = await getItem(state as QueueState, slug)
   if (!item) notFound()
@@ -60,9 +62,16 @@ export default async function ItemPage({
   return (
     <div className="space-y-6">
       <AutoRefresh active={revising || factcheckRunning} />
+      <Link
+        href={`/p/${product}/review`}
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-ink"
+      >
+        <ArrowLeftIcon className="size-4" />
+        Back to Review
+      </Link>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
             {m.product ?? slug}
             {m.date ? ` — ${formatDate(m.date)}` : ""}
           </h1>
@@ -71,7 +80,7 @@ export default async function ItemPage({
           </p>
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <Badge variant="secondary">{STATE_LABELS[state] ?? state}</Badge>
-            <FactcheckBadge verdict={m.factcheck} />
+            <FactcheckPill verdict={m.factcheck} />
             {state === "pending" && m.factcheck === "STALE" && !revising && (
               <RecheckFacts slug={slug} running={factcheckRunning} />
             )}
@@ -113,6 +122,7 @@ export default async function ItemPage({
         </div>
         <ItemActions
           slug={slug}
+          product={product}
           state={state}
           revising={revising}
           published={published}
@@ -121,7 +131,7 @@ export default async function ItemPage({
       </div>
 
       {revising && (
-        <div className="rounded-lg border bg-muted px-4 py-3 text-sm">
+        <div className="rounded-[var(--r)] border border-line bg-muted px-4 py-3 text-sm">
           The AI is revising these drafts — check back in a couple of minutes. This page updates on
           its own.
         </div>
@@ -137,7 +147,11 @@ export default async function ItemPage({
             ))}
           </TabsList>
           {tabs.map((t) => (
-            <TabsContent key={t.value} value={t.value} className="space-y-8 rounded-lg border p-6">
+            <TabsContent
+              key={t.value}
+              value={t.value}
+              className="space-y-8 rounded-[var(--r)] border border-line p-6"
+            >
               {t.files.map((f) => {
                 const editable = state === "pending" && EDITABLE_FILES.includes(f)
                 const rendered = <Markdown>{item.files[f]}</Markdown>

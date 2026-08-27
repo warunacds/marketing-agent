@@ -25,18 +25,21 @@ const CHANNELS: { id: string; label: string; file: string }[] = [
 
 export function ItemActions({
   slug,
+  product,
   state,
   revising,
   published,
   files,
 }: {
   slug: string
+  product: string
   state: string
   revising?: boolean
   published?: Record<string, PublishReceipt | PublishReceipt[]>
   files?: string[]
 }) {
   const router = useRouter()
+  const reviewPath = `/p/${product}/review`
   const [pending, startTransition] = useTransition()
   const [rejectOpen, setRejectOpen] = useState(false)
   const [forceOpen, setForceOpen] = useState(false)
@@ -62,7 +65,7 @@ export function ItemActions({
   function finish(result: ActionResult, successTitle: string, successDescription: string) {
     if (result.ok) {
       toast.success(successTitle, { description: successDescription })
-      router.push("/")
+      router.push(reviewPath)
       router.refresh()
     } else {
       toast.error("Something went wrong", { description: result.output.slice(0, 400) })
@@ -117,13 +120,13 @@ export function ItemActions({
 
   if (state === "pending") {
     return (
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-[var(--r)] border border-line bg-surface p-1.5 shadow-[var(--shadow)]">
         <Button disabled={pending || revising} onClick={() => approve(false)}>
           Approve
         </Button>
         <Dialog open={changesOpen} onOpenChange={setChangesOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline" disabled={pending || revising}>
+            <Button variant="secondary" disabled={pending || revising}>
               Request changes…
             </Button>
           </DialogTrigger>
@@ -169,9 +172,14 @@ export function ItemActions({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <span className="mx-0.5 hidden h-6 w-px self-center bg-line sm:block" aria-hidden />
         <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
           <DialogTrigger asChild>
-            <Button variant="destructive" disabled={pending || revising}>
+            <Button
+              variant="ghost"
+              disabled={pending || revising}
+              className="text-bad hover:bg-bad-soft hover:text-bad"
+            >
               Reject…
             </Button>
           </DialogTrigger>
@@ -245,7 +253,7 @@ export function ItemActions({
           setPublishOpen(open)
           if (!open && publishOutput !== null) {
             // Closed after a successful publish — the item has moved on.
-            router.push("/")
+            router.push(reviewPath)
             router.refresh()
           }
         }}
@@ -309,7 +317,7 @@ export function ItemActions({
                 <Button
                   onClick={() => {
                     setPublishOpen(false)
-                    router.push("/")
+                    router.push(reviewPath)
                     router.refresh()
                   }}
                 >

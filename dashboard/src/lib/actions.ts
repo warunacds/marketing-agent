@@ -110,7 +110,7 @@ export async function saveSchedule(
       `/api/schedule/${encodeURIComponent(product)}`,
       { method: "PUT", body: JSON.stringify(schedule) }
     )
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output }
   } catch (e) {
     return failure(e)
@@ -128,7 +128,7 @@ export async function saveChannels(
       `/api/channels/${encodeURIComponent(product)}`,
       { method: "PUT", body: JSON.stringify({ channels }) }
     )
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output }
   } catch (e) {
     return failure(e)
@@ -165,7 +165,7 @@ export async function resolveTodo(
       method: "POST",
       body: JSON.stringify({ file, todo, answer }),
     })
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     const left = todos_remaining_in_file
     return {
       ok: true,
@@ -185,7 +185,7 @@ export async function createProduct(name: string, description?: string): Promise
       method: "POST",
       body: JSON.stringify({ name, description: description?.trim() || undefined }),
     })
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output: data.output, jobId: data.job_id }
   } catch (e) {
     return failure(e)
@@ -208,7 +208,7 @@ export async function saveSecret(name: string, value: string): Promise<ActionRes
       method: "PUT",
       body: JSON.stringify({ name, value }),
     })
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output }
   } catch (e) {
     return failure(e)
@@ -260,7 +260,7 @@ export async function runPipeline(
         instructions: options?.instructions || undefined,
       }),
     })
-    revalidatePath("/runs")
+    revalidatePath("/", "layout")
     return { ok: true, output: `Started (job ${job_id})` }
   } catch (e) {
     return failure(e)
@@ -287,7 +287,7 @@ export async function confirmBrowserLogin(platform: string): Promise<ActionResul
       `/api/browser-sessions/${encodeURIComponent(platform)}/login/confirm`,
       { method: "POST", body: JSON.stringify({}) }
     )
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output: message ?? status, status }
   } catch (e) {
     return failure(e)
@@ -300,7 +300,7 @@ export async function cancelBrowserLogin(platform: string): Promise<ActionResult
       `/api/browser-sessions/${encodeURIComponent(platform)}/login/cancel`,
       { method: "POST", body: JSON.stringify({}) }
     )
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output: message ?? status, status }
   } catch (e) {
     return failure(e)
@@ -313,7 +313,7 @@ export async function logoutBrowser(platform: string): Promise<ActionResult> {
       `/api/browser-sessions/${encodeURIComponent(platform)}`,
       { method: "DELETE" }
     )
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output: message ?? status, status }
   } catch (e) {
     return failure(e)
@@ -330,7 +330,7 @@ export async function saveBrandFile(
       `/api/brands/${encodeURIComponent(product)}/${encodeURIComponent(file)}`,
       { method: "PUT", body: JSON.stringify({ content }) }
     )
-    revalidatePath("/brands", "layout")
+    revalidatePath("/", "layout")
     return { ok: true, output }
   } catch (e) {
     return failure(e)

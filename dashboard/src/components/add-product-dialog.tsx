@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { type ReactNode, useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { createProduct, getJobStatus } from "@/lib/actions"
@@ -18,12 +18,13 @@ import { Textarea } from "@/components/ui/textarea"
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{1,40}$/
 
-export function AddProductDialog() {
+export function AddProductDialog({ trigger }: { trigger?: ReactNode }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [jobId, setJobId] = useState<string | null>(null)
+  const [createdName, setCreatedName] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   // Poll the brandgen job while the dialog shows the drafting state.
@@ -38,17 +39,18 @@ export function AddProductDialog() {
       if (status === "done") {
         toast.success("Draft ready", {
           description:
-            "The AI drafted the product info. Answer the Open questions on its card to confirm its guesses.",
+            "The AI drafted the product info. Answer the Open questions to confirm its guesses.",
         })
       } else {
         toast.error("Drafting didn't finish", {
           description: "The product was created from the template. See Activity for details.",
         })
       }
+      if (createdName) router.push(`/p/${createdName}`)
       router.refresh()
     }, 3000)
     return () => clearInterval(timer)
-  }, [jobId, router])
+  }, [jobId, createdName, router])
 
   const nameValid = NAME_RE.test(name)
 
@@ -59,14 +61,16 @@ export function AddProductDialog() {
         toast.error("Could not add the product", { description: result.output.slice(0, 400) })
         return
       }
+      setCreatedName(name)
       router.refresh()
       if (result.jobId) {
         setJobId(result.jobId)
       } else {
         setOpen(false)
         toast.success(`${name} added`, {
-          description: "It starts with template files — fill in Product info before the first run.",
+          description: "It starts with template files — fill these in before the first run.",
         })
+        router.push(`/p/${name}`)
       }
     })
   }
@@ -83,9 +87,7 @@ export function AddProductDialog() {
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button>Add a product</Button>
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger ?? <Button>Add a product</Button>}</DialogTrigger>
       <DialogContent>
         {jobId ? (
           <DialogHeader>

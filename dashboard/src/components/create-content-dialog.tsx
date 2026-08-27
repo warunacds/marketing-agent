@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { type ReactNode, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { runPipeline } from "@/lib/actions"
@@ -14,9 +14,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 
-export function CreateContentDialog({ products }: { products: string[] }) {
+export function CreateContentDialog({
+  products,
+  trigger,
+}: {
+  products: string[]
+  trigger?: ReactNode
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [product, setProduct] = useState(products[0] ?? "")
@@ -39,7 +47,7 @@ export function CreateContentDialog({ products }: { products: string[] }) {
             : "The AI is preparing your report",
           { description: "This takes a few minutes. You can follow along on the Activity page." }
         )
-        router.push("/runs")
+        router.push(`/p/${product}/activity`)
         router.refresh()
       } else {
         toast.error("Could not start", { description: result.output.slice(0, 400) })
@@ -50,7 +58,7 @@ export function CreateContentDialog({ products }: { products: string[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="lg">Create this week&apos;s content</Button>
+        {trigger ?? <Button size="lg">Create this week&apos;s content</Button>}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -65,11 +73,10 @@ export function CreateContentDialog({ products }: { products: string[] }) {
             <label htmlFor="cc-product" className="text-sm font-medium">
               Product
             </label>
-            <select
+            <Select
               id="cc-product"
               value={product}
               onChange={(e) => setProduct(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               {products.length === 0 && <option value="">No products set up yet</option>}
               {products.map((p) => (
@@ -77,7 +84,7 @@ export function CreateContentDialog({ products }: { products: string[] }) {
                   {p}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <label htmlFor="cc-instructions" className="text-sm font-medium">
@@ -98,12 +105,11 @@ export function CreateContentDialog({ products }: { products: string[] }) {
                 <label htmlFor="cc-model" className="text-sm font-medium">
                   AI model override
                 </label>
-                <input
+                <Input
                   id="cc-model"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   placeholder="Leave empty for the default"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 />
               </div>
               <div className="space-y-1.5">

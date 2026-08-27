@@ -94,7 +94,7 @@ export function OpenQuestionsCard({ product, todos }: { product: string; todos: 
               <p className="text-xs text-muted-foreground">
                 …or{" "}
                 <Link
-                  href={`/brands/${product}?file=${encodeURIComponent(file)}`}
+                  href={`/p/${product}/knowledge/${encodeURIComponent(file)}`}
                   className="underline hover:text-foreground"
                 >
                   edit the file yourself

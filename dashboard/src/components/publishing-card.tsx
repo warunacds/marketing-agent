@@ -14,8 +14,6 @@ import {
 } from "@/lib/actions"
 import { AutoRefresh } from "@/components/auto-refresh"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import type { BrowserSession, ChannelConfig, Channels } from "@/lib/state"
 
 const TYPE_LABELS: Record<string, string> = {
@@ -703,68 +701,58 @@ export function PublishingCard({
   const working = busy || pending
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Publishing</CardTitle>
-        <CardDescription>
-          Where each piece of approved content goes when you press Publish.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <AutoRefresh active={loginInProgress} />
-        {CHANNEL_DEFS.map((def, defIndex) => {
-          const rows = rowsByChannel[def.id]
-          return (
-            <div key={def.id} className="space-y-4">
-              {defIndex > 0 && <Separator />}
-              <div>
-                <h3 className="text-sm font-medium">{def.label}</h3>
-                {def.intro && <p className="text-xs text-muted-foreground">{def.intro}</p>}
-              </div>
-              {rows.map((row, i) => (
-                <div
-                  key={row.id}
-                  className={def.multiple ? "space-y-3 rounded-md border p-3" : "space-y-3"}
-                >
-                  <DestinationFields
-                    product={product}
-                    channelId={def.id}
-                    row={row}
-                    types={def.types}
-                    secretsSet={secrets}
-                    browserSessions={browserSessions}
-                    update={(patch) => updateRow(def.id, row.id, patch)}
-                    onRemove={def.multiple ? () => removeRow(def.id, row.id) : undefined}
-                    removeDisabled={rows.length <= 1}
-                    onTest={() => sendTest(def.id, i, row.id)}
-                    testResult={tests[row.id]}
-                    busy={working}
-                    optimisticLogin={optimisticLogin}
-                    onLogin={beginLogin}
-                    onConfirmLogin={finishLogin}
-                    onCancelLogin={cancelLogin}
-                    onLogoutBrowser={logoutPlatform}
-                  />
-                </div>
-              ))}
-              {def.multiple && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={working}
-                  onClick={() => addRow(def.id)}
-                >
-                  + Add another destination
-                </Button>
-              )}
+    <div className="space-y-4">
+      <AutoRefresh active={loginInProgress} />
+      {CHANNEL_DEFS.map((def) => {
+        const rows = rowsByChannel[def.id]
+        return (
+          <div
+            key={def.id}
+            className="space-y-4 rounded-[var(--r)] border border-line bg-surface p-5 shadow-[var(--shadow)]"
+          >
+            <div className="space-y-0.5">
+              <h3 className="font-display text-sm font-semibold text-ink">{def.label}</h3>
+              {def.intro && <p className="text-xs text-muted-foreground">{def.intro}</p>}
             </div>
-          )
-        })}
-        <Separator />
-        <Button disabled={working} onClick={save}>
-          {working ? "Working…" : "Save"}
-        </Button>
-      </CardContent>
-    </Card>
+            {rows.map((row, i) => (
+              <div
+                key={row.id}
+                className={
+                  def.multiple ? "space-y-3 rounded-[var(--r-input)] border border-line p-3" : "space-y-3"
+                }
+              >
+                <DestinationFields
+                  product={product}
+                  channelId={def.id}
+                  row={row}
+                  types={def.types}
+                  secretsSet={secrets}
+                  browserSessions={browserSessions}
+                  update={(patch) => updateRow(def.id, row.id, patch)}
+                  onRemove={def.multiple ? () => removeRow(def.id, row.id) : undefined}
+                  removeDisabled={rows.length <= 1}
+                  onTest={() => sendTest(def.id, i, row.id)}
+                  testResult={tests[row.id]}
+                  busy={working}
+                  optimisticLogin={optimisticLogin}
+                  onLogin={beginLogin}
+                  onConfirmLogin={finishLogin}
+                  onCancelLogin={cancelLogin}
+                  onLogoutBrowser={logoutPlatform}
+                />
+              </div>
+            ))}
+            {def.multiple && (
+              <Button variant="outline" size="sm" disabled={working} onClick={() => addRow(def.id)}>
+                + Add another destination
+              </Button>
+            )}
+          </div>
+        )
+      })}
+      <Button disabled={working} onClick={save}>
+        {working ? "Working…" : "Save destinations"}
+      </Button>
+    </div>
   )
 }

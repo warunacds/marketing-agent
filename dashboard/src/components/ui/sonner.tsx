@@ -8,11 +8,20 @@ function Toaster(props: ToasterProps) {
 
   useEffect(() => {
     const el = document.documentElement
-    const update = () => setTheme(el.classList.contains("dark") ? "dark" : "light")
+    const media = window.matchMedia("(prefers-color-scheme: dark)")
+    const update = () => {
+      const attr = el.getAttribute("data-theme")
+      const dark = attr ? attr === "dark" : media.matches
+      setTheme(dark ? "dark" : "light")
+    }
     update()
     const observer = new MutationObserver(update)
-    observer.observe(el, { attributes: true, attributeFilter: ["class"] })
-    return () => observer.disconnect()
+    observer.observe(el, { attributes: true, attributeFilter: ["data-theme"] })
+    media.addEventListener("change", update)
+    return () => {
+      observer.disconnect()
+      media.removeEventListener("change", update)
+    }
   }, [])
 
   return <Sonner theme={theme} className="toaster group" {...props} />

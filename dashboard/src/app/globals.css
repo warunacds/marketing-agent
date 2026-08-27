@@ -1,82 +1,189 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-@custom-variant dark (&:is(.dark *));
+/* Dark applies when the root is explicitly dark, OR the OS prefers dark and the
+   user hasn't explicitly chosen light. Mirrors the token cascade below. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
 
+/* ----------------------------------------------------------------------------
+   Design tokens — warm paper ground, deep ink, one green accent, amber for
+   "needs you". Light is the bare :root; dark is applied two ways so the OS
+   preference and the explicit toggle both win. See REDESIGN.md §1.
+---------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.627 0.17 149);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+
+  --bg: #faf9f6;
+  --surface: #ffffff;
+  --surface-sunk: #f3f1ec;
+  --ink: #22201c;
+  --muted: #6b665d;
+  --line: #e4e0d8;
+
+  --accent: #2f7a55;
+  --accent-ink: #1e5238;
+  --accent-soft: #e7f1ea;
+  --on-accent: #ffffff;
+
+  --attention: #9a6212;
+  --attention-soft: #f7eedd;
+
+  --good: #2f7a55;
+  --good-soft: #e7f1ea;
+  --warn: #9a6212;
+  --warn-soft: #f7eedd;
+  --bad: #b0402f;
+  --bad-soft: #f6e3de;
+  --on-bad: #ffffff;
+
+  --ring: #2f7a55;
+
+  /* shape & depth */
+  --r: 12px;
+  --r-input: 8px;
+  --r-pill: 999px;
+  --shadow: 0 1px 2px rgba(30, 25, 15, 0.04), 0 4px 16px rgba(30, 25, 15, 0.05);
+
+  /* spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
 }
 
-.dark {
+/* Dark tokens, shared by the OS-preference and explicit-toggle selectors. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: #17150f;
+    --surface: #201d16;
+    --surface-sunk: #14120d;
+    --ink: #efebe1;
+    --muted: #a29b8c;
+    --line: #332e23;
+
+    --accent: #6fb98c;
+    --accent-ink: #a9d9bd;
+    --accent-soft: #1e3a2a;
+    --on-accent: #17150f;
+
+    --attention: #d6a44e;
+    --attention-soft: #3a2e14;
+
+    --good: #6fb98c;
+    --good-soft: #1e3a2a;
+    --warn: #d6a44e;
+    --warn-soft: #3a2e14;
+    --bad: #e0846f;
+    --bad-soft: #3a201a;
+    --on-bad: #17150f;
+
+    --ring: #6fb98c;
+
+    /* border emphasis instead of drop shadows in dark */
+    --shadow: none;
+  }
+}
+
+:root[data-theme="dark"] {
   color-scheme: dark;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.696 0.17 149);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+
+  --bg: #17150f;
+  --surface: #201d16;
+  --surface-sunk: #14120d;
+  --ink: #efebe1;
+  --muted: #a29b8c;
+  --line: #332e23;
+
+  --accent: #6fb98c;
+  --accent-ink: #a9d9bd;
+  --accent-soft: #1e3a2a;
+  --on-accent: #17150f;
+
+  --attention: #d6a44e;
+  --attention-soft: #3a2e14;
+
+  --good: #6fb98c;
+  --good-soft: #1e3a2a;
+  --warn: #d6a44e;
+  --warn-soft: #3a2e14;
+  --bad: #e0846f;
+  --bad-soft: #3a201a;
+  --on-bad: #17150f;
+
+  --ring: #6fb98c;
+  --shadow: none;
 }
 
+/* ----------------------------------------------------------------------------
+   Map Tailwind's utility color/font/radius keys onto the tokens. The shadcn
+   names (background/foreground/primary/muted/…) are kept so existing class
+   names re-skin automatically; the redesign names (surface/ink/accent-soft/…)
+   are added for the new primitives and shell.
+---------------------------------------------------------------------------- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-success: var(--success);
-  --color-border: var(--border);
-  --color-input: var(--input);
+  /* fonts (next/font sets the custom properties on <body>) */
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  /* shadcn-compatible color keys */
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--surface-sunk);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--surface-sunk);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--surface-sunk);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--bad);
+  --color-destructive-foreground: var(--on-bad);
+  --color-success: var(--good);
+  --color-border: var(--line);
+  --color-input: var(--line);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+
+  /* redesign color keys for the new work */
+  --color-surface: var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-ink: var(--ink);
+  --color-line: var(--line);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-attention: var(--attention);
+  --color-attention-soft: var(--attention-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+
+  /* radii */
+  --radius: var(--r-input);
+  --radius-sm: var(--r-input);
+  --radius-md: var(--r-input);
+  --radius-lg: var(--r);
+  --radius-xl: var(--r);
 }
 
 * {
@@ -85,6 +192,29 @@
 }
 
 body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Consistent accent focus ring for links and disclosure summaries (buttons,
+   inputs, and tabs carry their own ring via component classes). */
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--r-input);
+}
+
+/* Subtle motion only. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

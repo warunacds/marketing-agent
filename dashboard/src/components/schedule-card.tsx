@@ -162,8 +162,8 @@ export function ScheduleCard({ schedule }: { schedule: Schedule }) {
           Weekly performance report
         </label>
         <p className="text-xs text-muted-foreground">
-          The AI reviews what went out and what the numbers say, and adds lessons it learns to
-          Product info.
+          The AI reviews what went out and what the numbers say, and adds lessons it learns to what
+          it knows about your product.
           {schedule.report_last_run && ` Last report: ${formatDate(schedule.report_last_run)}.`}
         </p>
         <DayHourPicker
